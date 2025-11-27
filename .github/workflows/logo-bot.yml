@@ -2,7 +2,7 @@ name: Logo Guncelleme Botu
 
 on:
   schedule:
-    # Her ayın 1'inde, gece 04:00'te çalışır
+    # Her ayın 1'inde çalışır
     - cron: '0 4 1 * *'
   # Elle tetiklemek için
   workflow_dispatch:
@@ -24,11 +24,8 @@ jobs:
         run: |
           pip install firebase-admin
 
-      - name: Gizli Anahtarı Dosyaya Dönüştür
+      # Dosya oluşturma YOK. Direkt ENV variable olarak veriyoruz.
+      - name: Logo Botunu Çalıştır
         env:
           FIREBASE_KEY: ${{ secrets.FIREBASE_KEY }}
-        run: |
-          echo "$FIREBASE_KEY" > serviceAccountKey.json
-
-      - name: Logo Botunu Çalıştır
         run: python logo_bot.py
