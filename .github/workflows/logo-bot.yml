@@ -1,0 +1,34 @@
+name: Logo Guncelleme Botu
+
+on:
+  schedule:
+    # Her ayın 1'inde, gece 04:00'te çalışır
+    - cron: '0 4 1 * *'
+  # Elle tetiklemek için
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Kodları Çek
+        uses: actions/checkout@v3
+
+      - name: Python Kur
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Kütüphaneleri Yükle
+        run: |
+          pip install firebase-admin
+
+      - name: Gizli Anahtarı Dosyaya Dönüştür
+        env:
+          FIREBASE_KEY: ${{ secrets.FIREBASE_KEY }}
+        run: |
+          echo "$FIREBASE_KEY" > serviceAccountKey.json
+
+      - name: Logo Botunu Çalıştır
+        run: python logo_bot.py
