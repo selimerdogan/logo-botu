@@ -2,7 +2,7 @@ name: Logo Guncelleme Botu
 
 on:
   schedule:
-    # Her ayın 1'inde, gece 04:00'te çalışır
+    # Her ayın 1'inde çalışır
     - cron: '0 4 1 * *'
   # Elle tetiklemek için buton
   workflow_dispatch:
@@ -20,13 +20,13 @@ jobs:
         with:
           python-version: '3.11'
 
+      # --- BURASI GÜNCELLENDİ ---
       - name: Kütüphaneleri Yükle
         run: |
-          pip install firebase-admin
+          pip install firebase-admin pandas requests
 
-      # --- İŞTE BURASI EKSİKTİ ---
-      # Python'a gizli anahtarı burada veriyoruz
       - name: Logo Botunu Çalıştır
         env:
           FIREBASE_KEY: ${{ secrets.FIREBASE_KEY }}
+          CMC_API_KEY: ${{ secrets.CMC_API_KEY }}
         run: python logo_bot.py
