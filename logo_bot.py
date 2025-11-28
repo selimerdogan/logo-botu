@@ -107,7 +107,6 @@ def get_fon_metadata():
     }
     data = {}
     try:
-        # Session ile cookie al
         s = requests.Session()
         try: s.get("https://www.tefas.gov.tr/FonKarsilastirma.aspx", headers=headers, timeout=10)
         except: pass
@@ -116,21 +115,18 @@ def get_fon_metadata():
         if r.status_code == 200:
             for f in r.json().get('data', []):
                 data[f['FONKODU']] = f['FONADI']
-    except Exception as e: 
-        print(f"Fon hatası: {e}")
+    except: pass
     return data
 
 # ==============================================================================
 # ANA İŞLEM VE BİRLEŞTİRME
 # ==============================================================================
 
-# Verileri Çek
 meta_bist = get_bist_metadata()
 meta_abd = get_abd_metadata()
 meta_kripto = get_kripto_metadata()
 meta_fon = get_fon_metadata()
 
-# Manuel Tanımlar
 meta_doviz = {
     "USD": "ABD Doları", "EUR": "Euro", "GBP": "İngiliz Sterlini", "CHF": "İsviçre Frangı",
     "CAD": "Kanada Doları", "JPY": "Japon Yeni", "AUD": "Avustralya Doları", "CNY": "Çin Yuanı",
@@ -143,7 +139,6 @@ meta_altin = {
     "18 Ayar Altın": "18 Ayar Altın", "Gremse Altın": "Gremse", "Reşat Altın": "Reşat", "Hamit Altın": "Hamit"
 }
 
-# Boş kutular
 final_metadata = {
     "borsa_tr_tl": {},
     "borsa_abd_usd": {},
@@ -158,34 +153,30 @@ def get_avatar(text, color):
 
 print("Metadata birleştiriliyor...")
 
-# BIST Döngüsü
 for sembol, isim in meta_bist.items():
-    final_metadata["borsa_tr_tl"][sembol] = {
-        "name": isim,
-        "logo": get_avatar(sembol, "b30000")
-    }
+    final_metadata["borsa_tr_tl"][sembol] = {"name": isim, "logo": get_avatar(sembol, "b30000")}
 
-# ABD Döngüsü
 for sembol, isim in meta_abd.items():
-    final_metadata["borsa_abd_usd"][sembol] = {
-        "name": isim,
-        "logo": get_avatar(sembol, "0D8ABC")
-    }
+    final_metadata["borsa_abd_usd"][sembol] = {"name": isim, "logo": get_avatar(sembol, "0D8ABC")}
 
-# Kripto Döngüsü
 for sembol, isim in meta_kripto.items():
     raw_sym = sembol.split("-")[0].lower()
-    final_metadata["kripto_usd"][sembol] = {
-        "name": isim,
-        "logo": f"https://assets.coincap.io/assets/icons/{raw_sym}@2x.png"
-    }
+    final_metadata["kripto_usd"][sembol] = {"name": isim, "logo": f"https://assets.coincap.io/assets/icons/{raw_sym}@2x.png"}
 
-# Fon Döngüsü
 for sembol, isim in meta_fon.items():
-    final_metadata["fon_tl"][sembol] = {
-        "name": isim,
-        "logo": get_avatar(sembol, "27AE60")
-    }
+    final_metadata["fon_tl"][sembol] = {"name": isim, "logo": get_avatar(sembol, "27AE60")}
 
-# Döviz Döngüsü
-for sembol, isim in meta_doviz.
+for sembol, isim in meta_doviz.items():
+    code = sembol[:3].lower()
+    if sembol == "EURUSD": code = "eu"
+    if sembol == "GBPUSD": code = "gb"
+    final_metadata["doviz_tl"][sembol] = {"name": isim, "logo": f"https://flagcdn.com/w320/{code}.png"}
+
+for sembol, isim in meta_altin.items():
+    final_metadata["altin_tl"][sembol] = {"name": isim, "logo": "https://cdn-icons-png.flaticon.com/512/1975/1975709.png"}
+
+print("Veritabanına gönderiliyor...")
+doc_ref = db.collection(u'system').document(u'assets_metadata')
+doc_ref.set({u'logos': final_metadata}, merge=True)
+
+print("✅ İSİM VE LOGO GÜNCELLEMESİ TAMAMLANDI.")
