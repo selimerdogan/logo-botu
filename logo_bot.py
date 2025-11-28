@@ -6,7 +6,7 @@ import sys
 import json
 import pandas as pd
 import io
-from datetime import datetime # <--- EKSİK OLAN BU SATIR EKLENDİ
+from datetime import datetime
 
 # --- AYARLAR ---
 headers_general = {
@@ -36,7 +36,7 @@ except Exception as e:
     sys.exit(1)
 
 # ==============================================================================
-# DATA TOPLAYICILAR (İSİM + SEMBOL)
+# DATA TOPLAYICILAR
 # ==============================================================================
 
 # 1. BIST İSİMLERİ (TRADINGVIEW)
@@ -47,16 +47,16 @@ def get_bist_metadata():
         "filter": [{"left": "type", "operation": "in_range", "right": ["stock", "dr"]}],
         "options": {"lang": "tr"},
         "symbols": {"query": {"types": []}, "tickers": []},
-        "columns": ["name", "description"], # description = Şirket Adı
+        "columns": ["name", "description"],
         "range": [0, 1000]
     }
     data = {}
     try:
         r = requests.post(url, json=payload, headers=headers_general)
         for h in r.json().get('data', []):
-            d = h.get('d', []) # [Sembol, İsim]
+            d = h.get('d', [])
             if len(d) > 1:
-                data[d[0]] = d[1] # THYAO -> Türk Hava Yolları
+                data[d[0]] = d[1]
     except: pass
     return data
 
@@ -87,7 +87,7 @@ def get_kripto_metadata():
         r = requests.get(url, headers=headers, params=params)
         for coin in r.json()['data']:
             sym = f"{coin['symbol']}-USD"
-            name = coin['name'] # Bitcoin
+            name = coin['name']
             data[sym] = name
     except: pass
     return data
@@ -96,10 +96,7 @@ def get_kripto_metadata():
 def get_fon_metadata():
     print("4. Fon İsimleri çekiliyor (TEFAS)...")
     url = "https://www.tefas.gov.tr/api/DB/BindComparisonFundReturns"
-    
-    # Bugünün tarihini al (Düzeltilen kısım burası)
     date = datetime.now().strftime("%d.%m.%Y")
-    
     payload = {"calismatipi": "2", "fontip": "YAT", "bastarih": date, "bittarih": date}
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36",
@@ -110,21 +107,21 @@ def get_fon_metadata():
     }
     data = {}
     try:
-        # Önce cookie al
+        # Session ile cookie al
         s = requests.Session()
-        s.get("https://www.tefas.gov.tr/FonKarsilastirma.aspx", headers=headers)
+        try: s.get("https://www.tefas.gov.tr/FonKarsilastirma.aspx", headers=headers, timeout=10)
+        except: pass
         
-        r = s.post(url, json=payload, headers=headers)
+        r = s.post(url, json=payload, headers=headers, timeout=30)
         if r.status_code == 200:
             for f in r.json().get('data', []):
                 data[f['FONKODU']] = f['FONADI']
     except Exception as e: 
         print(f"Fon hatası: {e}")
-        pass
     return data
 
 # ==============================================================================
-# ANA İŞLEM
+# ANA İŞLEM VE BİRLEŞTİRME
 # ==============================================================================
 
 # Verileri Çek
@@ -133,7 +130,7 @@ meta_abd = get_abd_metadata()
 meta_kripto = get_kripto_metadata()
 meta_fon = get_fon_metadata()
 
-# Manuel Tanımlar (Döviz & Altın için)
+# Manuel Tanımlar
 meta_doviz = {
     "USD": "ABD Doları", "EUR": "Euro", "GBP": "İngiliz Sterlini", "CHF": "İsviçre Frangı",
     "CAD": "Kanada Doları", "JPY": "Japon Yeni", "AUD": "Avustralya Doları", "CNY": "Çin Yuanı",
@@ -146,7 +143,7 @@ meta_altin = {
     "18 Ayar Altın": "18 Ayar Altın", "Gremse Altın": "Gremse", "Reşat Altın": "Reşat", "Hamit Altın": "Hamit"
 }
 
-# --- LOGO & İSİM BİRLEŞTİRME ---
+# Boş kutular
 final_metadata = {
     "borsa_tr_tl": {},
     "borsa_abd_usd": {},
@@ -156,11 +153,39 @@ final_metadata = {
     "fon_tl": {}
 }
 
-# Yardımcı: Avatar Linki Oluştur
 def get_avatar(text, color):
     return f"https://ui-avatars.com/api/?name={text}&background={color}&color=fff&size=128&bold=true"
 
 print("Metadata birleştiriliyor...")
 
-# BIST
-for sembol
+# BIST Döngüsü
+for sembol, isim in meta_bist.items():
+    final_metadata["borsa_tr_tl"][sembol] = {
+        "name": isim,
+        "logo": get_avatar(sembol, "b30000")
+    }
+
+# ABD Döngüsü
+for sembol, isim in meta_abd.items():
+    final_metadata["borsa_abd_usd"][sembol] = {
+        "name": isim,
+        "logo": get_avatar(sembol, "0D8ABC")
+    }
+
+# Kripto Döngüsü
+for sembol, isim in meta_kripto.items():
+    raw_sym = sembol.split("-")[0].lower()
+    final_metadata["kripto_usd"][sembol] = {
+        "name": isim,
+        "logo": f"https://assets.coincap.io/assets/icons/{raw_sym}@2x.png"
+    }
+
+# Fon Döngüsü
+for sembol, isim in meta_fon.items():
+    final_metadata["fon_tl"][sembol] = {
+        "name": isim,
+        "logo": get_avatar(sembol, "27AE60")
+    }
+
+# Döviz Döngüsü
+for sembol, isim in meta_doviz.
