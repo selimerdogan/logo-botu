@@ -6,6 +6,7 @@ import sys
 import json
 import pandas as pd
 import io
+from datetime import datetime # <--- EKSİK OLAN BU SATIR EKLENDİ
 
 # --- AYARLAR ---
 headers_general = {
@@ -95,20 +96,31 @@ def get_kripto_metadata():
 def get_fon_metadata():
     print("4. Fon İsimleri çekiliyor (TEFAS)...")
     url = "https://www.tefas.gov.tr/api/DB/BindComparisonFundReturns"
-    # Basit bir tarih ile fon listesini alalım
+    
+    # Bugünün tarihini al (Düzeltilen kısım burası)
     date = datetime.now().strftime("%d.%m.%Y")
+    
     payload = {"calismatipi": "2", "fontip": "YAT", "bastarih": date, "bittarih": date}
     headers = {
-        "User-Agent": "Mozilla/5.0", "X-Requested-With": "XMLHttpRequest",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36",
+        "X-Requested-With": "XMLHttpRequest",
         "Referer": "https://www.tefas.gov.tr/FonKarsilastirma.aspx",
-        "Origin": "https://www.tefas.gov.tr", "Content-Type": "application/json; charset=UTF-8"
+        "Origin": "https://www.tefas.gov.tr", 
+        "Content-Type": "application/json; charset=UTF-8"
     }
     data = {}
     try:
-        r = requests.post(url, json=payload, headers=headers)
-        for f in r.json().get('data', []):
-            data[f['FONKODU']] = f['FONADI']
-    except: pass
+        # Önce cookie al
+        s = requests.Session()
+        s.get("https://www.tefas.gov.tr/FonKarsilastirma.aspx", headers=headers)
+        
+        r = s.post(url, json=payload, headers=headers)
+        if r.status_code == 200:
+            for f in r.json().get('data', []):
+                data[f['FONKODU']] = f['FONADI']
+    except Exception as e: 
+        print(f"Fon hatası: {e}")
+        pass
     return data
 
 # ==============================================================================
@@ -135,8 +147,6 @@ meta_altin = {
 }
 
 # --- LOGO & İSİM BİRLEŞTİRME ---
-# Yapı: { "THYAO": { "name": "Türk Hava Yolları", "logo": "http..." } }
-
 final_metadata = {
     "borsa_tr_tl": {},
     "borsa_abd_usd": {},
@@ -153,58 +163,4 @@ def get_avatar(text, color):
 print("Metadata birleştiriliyor...")
 
 # BIST
-for sembol, isim in meta_bist.items():
-    final_metadata["borsa_tr_tl"][sembol] = {
-        "name": isim,
-        "logo": get_avatar(sembol, "b30000") # Kırmızı
-    }
-
-# ABD
-for sembol, isim in meta_abd.items():
-    final_metadata["borsa_abd_usd"][sembol] = {
-        "name": isim,
-        "logo": get_avatar(sembol, "0D8ABC") # Mavi
-    }
-
-# KRIPTO
-for sembol, isim in meta_kripto.items():
-    raw_sym = sembol.split("-")[0].lower()
-    final_metadata["kripto_usd"][sembol] = {
-        "name": isim,
-        "logo": f"https://assets.coincap.io/assets/icons/{raw_sym}@2x.png"
-    }
-
-# FONLAR
-for sembol, isim in meta_fon.items():
-    final_metadata["fon_tl"][sembol] = {
-        "name": isim,
-        "logo": get_avatar(sembol, "27AE60") # Yeşil
-    }
-
-# DÖVİZ
-for sembol, isim in meta_doviz.items():
-    # Bayrak kodunu bul (USD -> us)
-    code = sembol[:3].lower()
-    if sembol == "EURUSD": code = "eu"
-    if sembol == "GBPUSD": code = "gb"
-    
-    final_metadata["doviz_tl"][sembol] = {
-        "name": isim,
-        "logo": f"https://flagcdn.com/w320/{code}.png"
-    }
-
-# ALTIN
-for sembol, isim in meta_altin.items():
-    final_metadata["altin_tl"][sembol] = {
-        "name": isim,
-        "logo": "https://cdn-icons-png.flaticon.com/512/1975/1975709.png"
-    }
-
-# KAYIT
-print("Veritabanına gönderiliyor...")
-doc_ref = db.collection(u'system').document(u'assets_metadata')
-doc_ref.set(final_metadata, merge=True)
-
-print("✅ İSİM VE LOGO GÜNCELLEMESİ TAMAMLANDI.")
-from datetime import datetime
-print(f"Zaman: {datetime.now()}")
+for sembol
