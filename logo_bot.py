@@ -4,7 +4,6 @@ from firebase_admin import credentials, firestore
 import os
 import sys
 import json
-import io
 from datetime import datetime
 
 # --- AYARLAR ---
@@ -35,185 +34,170 @@ except Exception as e:
     sys.exit(1)
 
 # ==============================================================================
-# DATA TOPLAYICILAR
+# YARDIMCI FONKSİYON: TRADINGVIEW SCANNER (LOGO AVCISI)
 # ==============================================================================
-
-# 1. BIST İSİMLERİ VE LOGOLARI (TRADINGVIEW ORİJİNAL)
-def get_bist_metadata():
-    print("1. BIST Logo ve İsimleri çekiliyor (TradingView)...")
-    url = "https://scanner.tradingview.com/turkey/scan"
+def get_tradingview_metadata(market):
+    """
+    TradingView'den hisse adını ve LOGO ID'sini çeker.
+    market: 'turkey' (BIST) veya 'america' (ABD)
+    """
+    print(f"   -> {market.upper()} Logoları ve İsimleri Çekiliyor...")
+    url = f"https://scanner.tradingview.com/{market}/scan"
     
-    # TradingView'den 'logoid' verisini de istiyoruz
+    # 'logoid' sütunu bize resmin adresini verecek
     payload = {
-        "filter": [{"left": "type", "operation": "in_range", "right": ["stock", "dr"]}],
+        "filter": [{"left": "type", "operation": "in_range", "right": ["stock", "dr", "fund"]}],
         "options": {"lang": "tr"},
         "symbols": {"query": {"types": []}, "tickers": []},
-        "columns": ["name", "description", "logoid"], # logoid ekledik
-        "range": [0, 1000]
+        "columns": ["name", "description", "logoid"],
+        "range": [0, 2000] # İlk 2000 hisse (Hepsini kapsar)
     }
     
-    data = {}
+    # TradingView Logo Sunucusu
     base_logo_url = "https://s3-symbol-logo.tradingview.com/"
     
-    try:
-        r = requests.post(url, json=payload, headers=headers_general)
-        for h in r.json().get('data', []):
-            d = h.get('d', []) # [Sembol, İsim, LogoID]
-            if len(d) > 2:
-                sembol = d[0]
-                isim = d[1]
-                logo_id = d[2]
-                
-                # Eğer TradingView'de logosu varsa onu kullan, yoksa boş bırak (aşağıda avatar atanır)
-                if logo_id:
-                    logo_link = f"{base_logo_url}{logo_id}.svg"
-                else:
-                    logo_link = None
-                    
-                data[sembol] = {"name": isim, "logo": logo_link}
-    except Exception as e:
-        print(f"BIST Hata: {e}")
-        
-    return data
-
-# 2. ABD İSİMLERİ (GITHUB CSV - YAHOO UYUMLU)
-def get_abd_metadata():
-    print("2. ABD İsimleri çekiliyor...")
-    # ABD hisseleri için logo bulmak zordur, şimdilik Avatar devam.
-    # İleride Clearbit API eklenebilir.
-    import pandas as pd # Local import
-    url = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/master/data/constituents.csv"
     data = {}
     try:
-        s = requests.get(url).content
-        df = pd.read_csv(io.StringIO(s.decode('utf-8')))
-        for index, row in df.iterrows():
-            sym = row['Symbol'].replace('.', '-')
-            name = row['Security']
-            data[sym] = name
-    except: pass
+        r = requests.post(url, json=payload, headers=headers_general, timeout=30)
+        if r.status_code == 200:
+            for h in r.json().get('data', []):
+                d = h.get('d', [])
+                # d[0]: Sembol (THYAO), d[1]: Tam İsim, d[2]: LogoID
+                if len(d) > 2:
+                    sembol = d[0]
+                    isim = d[1]
+                    logo_id = d[2]
+                    
+                    # Logo varsa linki oluştur, yoksa None
+                    logo_url = f"{base_logo_url}{logo_id}.svg" if logo_id else None
+                    
+                    data[sembol] = {"name": isim, "logo": logo_url}
+    except Exception as e:
+        print(f"   -> Hata: {e}")
+    
     return data
 
-# 3. KRİPTO İSİMLERİ (CMC)
-def get_kripto_metadata():
-    print("3. Kripto İsimleri çekiliyor...")
-    if not CMC_API_KEY: return {}
+# ==============================================================================
+# VERİ TOPLAMA BAŞLIYOR
+# ==============================================================================
+print("--- PROFESYONEL LOGO BOTU BAŞLADI ---")
+
+# 1. BIST (TRADINGVIEW)
+meta_bist = get_tradingview_metadata("turkey")
+print(f"   -> ✅ BIST: {len(meta_bist)} adet logo bulundu.")
+
+# 2. ABD (TRADINGVIEW)
+meta_abd = get_tradingview_metadata("america")
+print(f"   -> ✅ ABD: {len(meta_abd)} adet logo bulundu.")
+
+# 3. KRİPTO (COINMARKETCAP)
+print("3. Kripto Logoları (CMC) Çekiliyor...")
+meta_kripto = {}
+if CMC_API_KEY:
     url = 'https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest'
     params = {'start': '1', 'limit': '300', 'convert': 'USD'}
     headers = {'Accepts': 'application/json', 'X-CMC_PRO_API_KEY': CMC_API_KEY}
-    data = {}
     try:
         r = requests.get(url, headers=headers, params=params)
-        for coin in r.json()['data']:
-            sym = f"{coin['symbol']}-USD"
-            name = coin['name']
-            data[sym] = name
+        if r.status_code == 200:
+            for coin in r.json()['data']:
+                sym = coin['symbol']
+                # CMC Logo URL Yapısı (ID'ye göre)
+                coin_id = coin['id']
+                logo_url = f"https://s2.coinmarketcap.com/static/img/coins/64x64/{coin_id}.png"
+                
+                meta_kripto[f"{sym}-USD"] = {
+                    "name": coin['name'],
+                    "logo": logo_url
+                }
     except: pass
-    return data
+print(f"   -> ✅ Kripto: {len(meta_kripto)} adet logo bulundu.")
 
-# 4. FON İSİMLERİ (TEFAS)
-def get_fon_metadata():
-    print("4. Fon İsimleri çekiliyor...")
+# 4. YATIRIM FONLARI (TEFAS)
+print("4. Fon İsimleri Çekiliyor...")
+meta_fon = {}
+# Fonlar için standart, şık bir ikon
+FON_ICON = "https://cdn-icons-png.flaticon.com/512/2910/2910312.png" 
+
+try:
     url = "https://www.tefas.gov.tr/api/DB/BindComparisonFundReturns"
     date = datetime.now().strftime("%d.%m.%Y")
     payload = {"calismatipi": "2", "fontip": "YAT", "bastarih": date, "bittarih": date}
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36",
-        "X-Requested-With": "XMLHttpRequest",
-        "Referer": "https://www.tefas.gov.tr/FonKarsilastirma.aspx",
-        "Origin": "https://www.tefas.gov.tr", 
-        "Content-Type": "application/json; charset=UTF-8"
-    }
-    data = {}
-    try:
-        s = requests.Session()
-        try: s.get("https://www.tefas.gov.tr/FonKarsilastirma.aspx", headers=headers, timeout=10)
-        except: pass
-        
-        r = s.post(url, json=payload, headers=headers, timeout=30)
-        if r.status_code == 200:
-            for f in r.json().get('data', []):
-                data[f['FONKODU']] = f['FONADI']
-    except: pass
-    return data
+    headers_tefas = {"User-Agent": "Mozilla/5.0", "X-Requested-With": "XMLHttpRequest", "Referer": "https://www.tefas.gov.tr", "Content-Type": "application/json"}
+    
+    s = requests.Session()
+    s.get("https://www.tefas.gov.tr/FonKarsilastirma.aspx", headers=headers_tefas) # Cookie
+    r = s.post(url, json=payload, headers=headers_tefas)
+    
+    if r.status_code == 200:
+        for f in r.json().get('data', []):
+            meta_fon[f['FONKODU']] = {
+                "name": f['FONADI'],
+                "logo": FON_ICON
+            }
+except: pass
+print(f"   -> ✅ Fon: {len(meta_fon)} adet isim bulundu.")
 
-# ==============================================================================
-# ANA İŞLEM VE BİRLEŞTİRME
-# ==============================================================================
-
-# Verileri Çek
-meta_bist = get_bist_metadata()
-meta_abd = get_abd_metadata()
-meta_kripto = get_kripto_metadata()
-meta_fon = get_fon_metadata()
-
-# Manuel Tanımlar
-meta_doviz = {
+# 5. DÖVİZ (BAYRAKLAR)
+print("5. Döviz Bayrakları Hazırlanıyor...")
+meta_doviz = {}
+# Manuel Eşleştirme Tablosu
+bayraklar = {
+    "USD": "us", "EUR": "eu", "GBP": "gb", "CHF": "ch", 
+    "CAD": "ca", "JPY": "jp", "AUD": "au", "CNY": "cn",
+    "DKK": "dk", "SEK": "se", "NOK": "no", "SAR": "sa"
+}
+isimler = {
     "USD": "ABD Doları", "EUR": "Euro", "GBP": "İngiliz Sterlini", "CHF": "İsviçre Frangı",
-    "CAD": "Kanada Doları", "JPY": "Japon Yeni", "AUD": "Avustralya Doları", "CNY": "Çin Yuanı",
+    "CAD": "Kanada Doları", "JPY": "Japon Yeni", "AUD": "Avustralya Doları",
     "EURUSD": "Euro / Dolar", "GBPUSD": "Sterlin / Dolar", "DX-Y": "Dolar Endeksi"
 }
-meta_altin = {
-    "Gram Altın": "24 Ayar Gram", "Çeyrek Altın": "Çeyrek Altın", "Yarım Altın": "Yarım Altın",
-    "Tam Altın": "Tam Altın", "Cumhuriyet A.": "Cumhuriyet Altını", "Ata Altın": "Ata Lira",
-    "Ons Altın": "Uluslararası Ons", "22 Ayar Bilezik": "22 Ayar Bilezik", "14 Ayar Altın": "14 Ayar Altın",
-    "18 Ayar Altın": "18 Ayar Altın", "Gremse Altın": "Gremse", "Reşat Altın": "Reşat", "Hamit Altın": "Hamit"
-}
 
-final_metadata = {
-    "borsa_tr_tl": {},
-    "borsa_abd_usd": {},
-    "kripto_usd": {},
-    "doviz_tl": {},
-    "altin_tl": {},
-    "fon_tl": {}
-}
+# Standart Listemiz
+liste_doviz = ["USDTRY", "EURTRY", "GBPTRY", "CHFTRY", "CADTRY", "JPYTRY", "AUDTRY", "EURUSD", "GBPUSD", "DX-Y"]
 
-# Avatar Fallback Fonksiyonu
-def get_avatar(text, color):
-    return f"https://ui-avatars.com/api/?name={text}&background={color}&color=fff&size=128&bold=true"
-
-print("Metadata birleştiriliyor...")
-
-# BIST (ÖZEL İŞLEM - TRADINGVIEW LOGOSU)
-for sembol, veri in meta_bist.items():
-    # Veri = {"name": "Turk Hava Yollari", "logo": "https://s3...svg"}
-    isim = veri["name"]
-    logo = veri["logo"]
+for kur in liste_doviz:
+    ana_kod = kur.replace("TRY", "").replace("=X", "")
     
-    # Eğer TradingView logo vermediyse eski avatarı kullan
-    if not logo:
-        logo = get_avatar(sembol, "b30000")
-        
-    final_metadata["borsa_tr_tl"][sembol] = {"name": isim, "logo": logo}
+    # Bayrak kodunu bul (USD -> us)
+    flag_code = "un" # Bilinmeyen
+    if ana_kod in bayraklar: flag_code = bayraklar[ana_kod]
+    elif ana_kod == "EURUSD": flag_code = "eu"
+    elif ana_kod == "GBPUSD": flag_code = "gb"
+    elif ana_kod == "DX-Y": flag_code = "us"
+    
+    # İsim bul
+    tam_isim = isimler.get(ana_kod, ana_kod)
+    
+    meta_doviz[kur] = {
+        "name": tam_isim,
+        "logo": f"https://flagcdn.com/w320/{flag_code}.png"
+    }
 
-# ABD
-for sembol, isim in meta_abd.items():
-    final_metadata["borsa_abd_usd"][sembol] = {"name": isim, "logo": get_avatar(sembol, "0D8ABC")}
+# 6. ALTIN
+print("6. Altın İkonları Hazırlanıyor...")
+meta_altin = {}
+GOLD_ICON = "https://cdn-icons-png.flaticon.com/512/1975/1975709.png"
+SILVER_ICON = "https://cdn-icons-png.flaticon.com/512/2622/2622256.png"
 
-# Kripto
-for sembol, isim in meta_kripto.items():
-    raw_sym = sembol.split("-")[0].lower()
-    final_metadata["kripto_usd"][sembol] = {"name": isim, "logo": f"https://assets.coincap.io/assets/icons/{raw_sym}@2x.png"}
+altinlar = ["Gram Altın", "Çeyrek Altın", "Yarım Altın", "Tam Altın", "Cumhuriyet A.", "Ata Altın", "Ons Altın", "22 Ayar Bilezik", "14 Ayar Altın", "18 Ayar Altın", "Gremse Altın", "Reşat Altın", "Hamit Altın", "Has Altın"]
 
-# Fon
-for sembol, isim in meta_fon.items():
-    final_metadata["fon_tl"][sembol] = {"name": isim, "logo": get_avatar(sembol, "27AE60")}
+for a in altinlar:
+    meta_altin[a] = {"name": a, "logo": GOLD_ICON}
+meta_altin["Gümüş"] = {"name": "Gümüş", "logo": SILVER_ICON}
 
-# Döviz
-for sembol, isim in meta_doviz.items():
-    code = sembol[:3].lower()
-    if sembol == "EURUSD": code = "eu"
-    if sembol == "GBPUSD": code = "gb"
-    final_metadata["doviz_tl"][sembol] = {"name": isim, "logo": f"https://flagcdn.com/w320/{code}.png"}
 
-# Altın
-for sembol, isim in meta_altin.items():
-    final_metadata["altin_tl"][sembol] = {"name": isim, "logo": "https://cdn-icons-png.flaticon.com/512/1975/1975709.png"}
+# ==============================================================================
+# BİRLEŞTİR VE KAYDET
+# ==============================================================================
+final_metadata = {
+    "borsa_tr_tl": meta_bist,
+    "borsa_abd_usd": meta_abd,
+    "kripto_usd": meta_kripto,
+    "fon_tl": meta_fon,
+    "doviz_tl": meta_doviz,
+    "altin_tl": meta_altin
+}
 
-# KAYIT
-print("Veritabanına gönderiliyor...")
-doc_ref = db.collection(u'system').document(u'assets_metadata')
-doc_ref.set({u'logos': final_metadata}, merge=True)
-
-print("✅ İSİM VE LOGO GÜNCELLEMESİ TAMAMLANDI.")
+print("Veritabanına gönderiliyor (system/assets_metadata)...")
+doc
