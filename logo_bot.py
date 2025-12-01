@@ -44,7 +44,7 @@ def get_tradingview_metadata(market):
         "options": {"lang": "tr"},
         "symbols": {"query": {"types": []}, "tickers": []},
         "columns": ["name", "description", "logoid"],
-        "range": [0, 2000]
+        "range": [0, 2500] 
     }
     
     data = {}
@@ -53,7 +53,8 @@ def get_tradingview_metadata(market):
     try:
         r = requests.post(url, json=payload, headers=headers_general, timeout=30)
         if r.status_code == 200:
-            for h in r.json().get('data', []):
+            items = r.json().get('data', [])
+            for h in items:
                 d = h.get('d', [])
                 if len(d) > 2:
                     sembol = d[0]
@@ -62,25 +63,26 @@ def get_tradingview_metadata(market):
                     
                     logo_url = f"{base_logo_url}{logo_id}.svg" if logo_id else None
                     data[sembol] = {"name": isim, "logo": logo_url}
+            
+            print(f"      ✅ {len(data)} adet logo bulundu.")
     except Exception as e:
-        print(f"   -> Hata: {e}")
+        print(f"      ⚠️ Hata: {e}")
     return data
 
 # ==============================================================================
-# 2. KRİPTO (API GEREKTİRMEYEN STATİK LİSTE)
+# 2. KRİPTO (STATİK LİSTE - COINCAP İKONLARI)
 # ==============================================================================
-# CMC Anahtarı ile uğraşmayalım, CoinCap'in açık kaynak ikonlarını kullanalım.
 def get_crypto_metadata():
-    print("2. Kripto Logoları (Statik) hazırlanıyor...")
+    print("2. Kripto Logoları hazırlanıyor...")
     
-    # En popüler coinlerin listesi
+    # En popüler coinler
     LISTE_KRIPTO = [
         "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "AVAX", "DOGE", "TRX", "DOT", "LINK", "LTC", "SHIB", "ATOM", "XLM", "ALGO", "SAND", "MANA", "EOS", "NEAR", "FIL", "APE", "QNT", "PEPE", "ARB", "OP", "SUI", "APT", "RNDR", "GRT", "INJ", "FET", "GALA", "LDO", "FTM", "UNI", "AAVE", "SNX", "MKR", "CRV", "CHZ", "STX", "IMX", "MINA", "AXS", "EGLD", "THETA", "XTZ", "NEO", "EOS", "IOTA", "KAS", "SEI", "TIA", "WLD", "BONK", "FLOKI", "WIF"
     ]
     
     data = {}
     for coin in LISTE_KRIPTO:
-        # CoinCap standart ikon URL yapısı
+        # CoinCap'in yüksek kaliteli ikonları
         logo = f"https://assets.coincap.io/assets/icons/{coin.lower()}@2x.png"
         data[f"{coin}-USD"] = {"name": coin, "logo": logo}
         
@@ -88,7 +90,7 @@ def get_crypto_metadata():
     return data
 
 # ==============================================================================
-# 3. YATIRIM FONLARI (TEFAS - GERİYE DÖNÜK TARAMA)
+# 3. YATIRIM FONLARI (TEFAS - TEK TİP ŞIK İKON)
 # ==============================================================================
 def get_fon_metadata():
     print("3. Fon İsimleri (TEFAS) taranıyor...")
@@ -101,16 +103,23 @@ def get_fon_metadata():
         "Content-Type": "application/json"
     }
     
+    # TEFAS için özel Session
     session = requests.Session()
-    try: session.get("https://www.tefas.gov.tr/FonKarsilastirma.aspx", headers=headers)
+    try: session.get("https://www.tefas.gov.tr/FonKarsilastirma.aspx", headers=headers, timeout=10)
     except: pass
     
     simdi = datetime.now()
     data = {}
     
-    # 5 gün geriye git (Veri bulana kadar)
-    for i in range(5):
+    # --- İŞTE O GÜZEL FON LOGOSU ---
+    # Yeşil, modern, pasta grafik ikonu (Flaticon)
+    # Alternatif Link: https://cdn-icons-png.flaticon.com/512/3310/3310624.png (Büyüme Grafiği)
+    FON_ICON = "https://cdn-icons-png.flaticon.com/512/2910/2910312.png"
+    
+    # 7 gün geriye git (Veri bulana kadar)
+    for i in range(7):
         tarih_obj = simdi - timedelta(days=i)
+        if tarih_obj.year > datetime.now().year: tarih_obj = tarih_obj.replace(year=datetime.now().year)
         tarih_str = tarih_obj.strftime("%d.%m.%Y")
         
         try:
@@ -120,17 +129,15 @@ def get_fon_metadata():
             if r.status_code == 200:
                 fon_listesi = r.json().get('data', [])
                 if len(fon_listesi) > 50:
-                    # Standart Fon İkonu
-                    FON_ICON = "https://cdn-icons-png.flaticon.com/512/2910/2910312.png"
-                    
                     for f in fon_listesi:
+                        # Kod: TCD, İsim: Tacirler Portföy..., Logo: Standart İkon
                         data[f['FONKODU']] = {"name": f['FONADI'], "logo": FON_ICON}
                         
                     print(f"   -> ✅ Fon: {len(data)} adet isim bulundu ({tarih_str}).")
                     return data
         except: continue
         
-    print("   -> ❌ Fon: Veri bulunamadı.")
+    print("   -> ❌ Fon: İsimler çekilemedi.")
     return {}
 
 # ==============================================================================
@@ -140,7 +147,6 @@ def get_doviz_altin_metadata():
     print("4. Döviz ve Altın hazırlanıyor...")
     data_doviz = {}
     
-    # Döviz İsim ve Bayrakları
     doviz_map = {
         "USD": {"n": "ABD Doları", "c": "us"}, "EUR": {"n": "Euro", "c": "eu"},
         "GBP": {"n": "İngiliz Sterlini", "c": "gb"}, "CHF": {"n": "İsviçre Frangı", "c": "ch"},
@@ -161,12 +167,11 @@ def get_doviz_altin_metadata():
                 "logo": f"https://flagcdn.com/w320/{info['c']}.png"
             }
             
-    # Altın İsimleri
     data_altin = {}
     GOLD_ICON = "https://cdn-icons-png.flaticon.com/512/1975/1975709.png"
     SILVER_ICON = "https://cdn-icons-png.flaticon.com/512/2622/2622256.png"
     
-    altinlar = ["Gram Altın", "Çeyrek Altın", "Yarım Altın", "Tam Altın", "Cumhuriyet A.", "Ata Altın", "Ons Altın", "22 Ayar Bilezik", "14 Ayar Altın", "18 Ayar Altın", "Gremse Altın", "Reşat Altın", "Hamit Altın"]
+    altinlar = ["Gram Altın", "Çeyrek Altın", "Yarım Altın", "Tam Altın", "Cumhuriyet A.", "Ata Altın", "Ons Altın", "22 Ayar Bilezik", "14 Ayar Altın", "18 Ayar Altın", "Gremse Altın", "Reşat Altın", "Hamit Altın", "Has Altın"]
     
     for a in altinlar:
         data_altin[a] = {"name": a, "logo": GOLD_ICON}
@@ -178,7 +183,7 @@ def get_doviz_altin_metadata():
 # ANA İŞLEM
 # ==============================================================================
 
-print("--- LOGO BOTU ÇALIŞIYOR ---")
+print("--- LOGO BOTU ÇALIŞIYOR (PREMIUM TASARIM) ---")
 
 meta_bist = get_tradingview_metadata("turkey")
 meta_abd = get_tradingview_metadata("america")
@@ -186,7 +191,7 @@ meta_kripto = get_crypto_metadata()
 meta_fon = get_fon_metadata()
 meta_doviz, meta_altin = get_doviz_altin_metadata()
 
-# Avatar Fallback
+# Avatar Fallback (Eğer TradingView'de logo yoksa)
 def get_avatar(text, color):
     return f"https://ui-avatars.com/api/?name={text}&background={color}&color=fff&size=128&bold=true"
 
@@ -208,8 +213,7 @@ final_metadata = {
 }
 
 print("Veritabanına kaydediliyor...")
-# HATA DÜZELTİLDİ: 'doc' değil 'doc_ref'
 doc_ref = db.collection(u'system').document(u'assets_metadata')
 doc_ref.set({u'logos': final_metadata}, merge=True)
 
-print("✅ İŞLEM BAŞARIYLA TAMAMLANDI.")
+print("✅ LOGO GÜNCELLEMESİ TAMAMLANDI.")
