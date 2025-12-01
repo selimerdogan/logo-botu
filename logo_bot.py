@@ -34,18 +34,23 @@ except Exception as e:
     sys.exit(1)
 
 # ==============================================================================
-# 1. BIST & ABD (TRADINGVIEW SCANNER)
+# 1. BIST & ABD (TRADINGVIEW SCANNER - ORİJİNAL LOGOLAR VE UZUN İSİMLER)
 # ==============================================================================
 def get_tradingview_metadata(market):
+    """
+    TradingView'den hisse tam adını ve logo ID'sini çeker.
+    market: 'turkey' veya 'america'
+    """
     print(f"   -> {market.upper()} Logoları aranıyor...")
     url = f"https://scanner.tradingview.com/{market}/scan"
     
+    # Tüm hisseleri kapsayacak sorgu
     payload = {
         "filter": [{"left": "type", "operation": "in_range", "right": ["stock", "dr", "fund"]}],
         "options": {"lang": "tr"},
         "symbols": {"query": {"types": []}, "tickers": []},
         "columns": ["name", "description", "logoid"],
-        "range": [0, 3000] 
+        "range": [0, 4000] 
     }
     
     data = {}
@@ -59,65 +64,72 @@ def get_tradingview_metadata(market):
                 d = h.get('d', [])
                 if len(d) > 2:
                     sembol = d[0]
-                    isim = d[1]
+                    isim = d[1]   # Uzun İsim (Örn: Turk Hava Yollari)
                     logo_id = d[2]
                     
+                    # Logo varsa link oluştur
                     logo_url = f"{base_logo_url}{logo_id}.svg" if logo_id else None
+                    
+                    # İsim temizliği (varsa virgül sonrası gereksiz detayları at)
+                    if "," in isim: isim = isim.split(",")[0]
+                    
                     data[sembol] = {"name": isim, "logo": logo_url}
             
-            print(f"      ✅ {len(data)} adet logo bulundu.")
+            print(f"      ✅ {len(data)} adet veri bulundu.")
     except Exception as e:
         print(f"      ⚠️ Hata: {e}")
     return data
 
 # ==============================================================================
-# 2. KRİPTO (COINMARKETCAP API - TOP 250)
+# 2. KRİPTO (CMC API - TOP 250 - UZUN İSİMLER)
 # ==============================================================================
 def get_crypto_metadata():
-    print("2. Kripto Logoları (CMC API - Top 250) çekiliyor...")
+    print("2. Kripto Logoları (CMC API) çekiliyor...")
     
     if not CMC_API_KEY:
-        print("   -> ⚠️ CMC API Key yok! Kripto logoları çekilemiyor.")
-        return {}
+        print("   -> ⚠️ CMC Key Yok! Statik liste kullanılacak.")
+        # Yedek Statik Liste
+        LISTE_YEDEK = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "AVAX", "DOGE", "TRX", "DOT", "LINK", "SHIB"]
+        data = {}
+        for c in LISTE_YEDEK:
+            logo = f"https://assets.coincap.io/assets/icons/{c.lower()}@2x.png"
+            data[f"{c}-USD"] = {"name": c, "logo": logo}
+        return data
 
+    # API ile Çekim
     url = 'https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest'
-    # Fiyat botu ile aynı parametreler: Top 250
     params = {'start': '1', 'limit': '250', 'convert': 'USD'}
     headers = {'Accepts': 'application/json', 'X-CMC_PRO_API_KEY': CMC_API_KEY}
-    
     data = {}
+    
     try:
         r = requests.get(url, headers=headers, params=params, timeout=30)
         if r.status_code == 200:
             coins = r.json()['data']
             for coin in coins:
-                sym = coin['symbol']  # BTC
-                name = coin['name']   # Bitcoin
-                coin_id = coin['id']  # 1
+                sym = coin['symbol']
+                name = coin['name'] # Bitcoin, Ethereum...
+                coin_id = coin['id']
                 
-                # CMC'nin resmi yüksek kaliteli logo sunucusu
-                logo_url = f"https://s2.coinmarketcap.com/static/img/coins/64x64/{coin_id}.png"
+                # CMC Resmi Logo Sunucusu
+                logo = f"https://s2.coinmarketcap.com/static/img/coins/64x64/{coin_id}.png"
                 
-                # Anahtar formatı fiyat botuyla aynı olmalı: "BTC-USD"
-                data[f"{sym}-USD"] = {"name": name, "logo": logo_url}
-            
-            print(f"   -> ✅ CMC: {len(data)} adet logo ve isim alındı.")
-        else:
-            print(f"   -> ⚠️ CMC Hatası: {r.status_code}")
+                data[f"{sym}-USD"] = {"name": name, "logo": logo}
+            print(f"   -> ✅ CMC: {len(data)} adet kripto metadata alındı.")
     except Exception as e:
-        print(f"   -> ⚠️ Bağlantı Hatası: {e}")
+        print(f"   -> ⚠️ CMC Hatası: {e}")
         
     return data
 
 # ==============================================================================
-# 3. YATIRIM FONLARI (TEFAS + YEDEK LİSTE)
+# 3. YATIRIM FONLARI (TEFAS - YEDEK LİSTE DESTEKLİ)
 # ==============================================================================
 def get_fon_metadata():
     print("3. Fon İsimleri (TEFAS) taranıyor...")
     FON_ICON = "https://cdn-icons-png.flaticon.com/512/2910/2910312.png"
     data = {}
     
-    # --- YEDEK LİSTE ---
+    # --- A PLAN: YEDEK LİSTE (TEFAS Çökerse Diye) ---
     YEDEK_FONLAR = {
         "AFT": "Ak Portföy Yeni Teknolojiler", "TCD": "Tacirler Portföy Değişken", "MAC": "Marmara Capital Hisse",
         "YAY": "Yapı Kredi Yabancı Teknoloji", "IPJ": "İş Portföy Elektrikli Araçlar", "NNF": "Hedef Portföy Birinci",
@@ -127,103 +139,6 @@ def get_fon_metadata():
     for kod, isim in YEDEK_FONLAR.items():
         data[kod] = {"name": isim, "logo": FON_ICON}
 
-    # --- CANLI ÇEKİM ---
+    # --- B PLAN: CANLI ÇEKİM (Geriye Dönük Tarama) ---
     url = "https://www.tefas.gov.tr/api/DB/BindComparisonFundReturns"
-    headers = {"User-Agent": "Mozilla/5.0", "X-Requested-With": "XMLHttpRequest", "Referer": "https://www.tefas.gov.tr"}
-    session = requests.Session()
-    
-    try:
-        session.get("https://www.tefas.gov.tr/FonKarsilastirma.aspx", headers=headers, timeout=10)
-        simdi = datetime.now()
-        # 7 gün geriye git
-        for i in range(7):
-            tarih_str = (simdi - timedelta(days=i)).strftime("%d.%m.%Y")
-            try:
-                payload = {"calismatipi": "2", "fontip": "YAT", "bastarih": tarih_str, "bittarih": tarih_str}
-                r = session.post(url, json=payload, headers=headers, timeout=30)
-                if r.status_code == 200:
-                    fon_listesi = r.json().get('data', [])
-                    if len(fon_listesi) > 50:
-                        for f in fon_listesi:
-                            data[f['FONKODU']] = {"name": f['FONADI'], "logo": FON_ICON}
-                        print(f"   -> ✅ TEFAS: {len(fon_listesi)} adet güncel isim alındı.")
-                        return data
-            except: continue
-    except: pass
-    
-    print(f"   -> ⚠️ TEFAS yanıt vermedi, {len(data)} adet yedek fon kullanılıyor.")
-    return data
-
-# ==============================================================================
-# 4. DÖVİZ & ALTIN
-# ==============================================================================
-def get_doviz_altin_metadata():
-    print("4. Döviz ve Altın hazırlanıyor...")
-    
-    # Döviz
-    doviz_map = {
-        "USD": {"n": "ABD Doları", "c": "us"}, "EUR": {"n": "Euro", "c": "eu"},
-        "GBP": {"n": "İngiliz Sterlini", "c": "gb"}, "CHF": {"n": "İsviçre Frangı", "c": "ch"},
-        "CAD": {"n": "Kanada Doları", "c": "ca"}, "JPY": {"n": "Japon Yeni", "c": "jp"},
-        "AUD": {"n": "Avustralya Doları", "c": "au"}, "CNY": {"n": "Çin Yuanı", "c": "cn"},
-        "EURUSD": {"n": "Euro/Dolar", "c": "eu"}, "GBPUSD": {"n": "Sterlin/Dolar", "c": "gb"},
-        "DX-Y": {"n": "Dolar Endeksi", "c": "us"}
-    }
-    liste_doviz = ["USDTRY", "EURTRY", "GBPTRY", "CHFTRY", "CADTRY", "JPYTRY", "AUDTRY", "EURUSD", "GBPUSD", "DX-Y"]
-    data_doviz = {}
-    for kur in liste_doviz:
-        kod = kur.replace("TRY", "").replace("=X", "")
-        if kod in doviz_map:
-            info = doviz_map[kod]
-            data_doviz[kur] = {"name": info["n"], "logo": f"https://flagcdn.com/w320/{info['c']}.png"}
-
-    # Altın
-    GOLD = "https://cdn-icons-png.flaticon.com/512/1975/1975709.png"
-    SILVER = "https://cdn-icons-png.flaticon.com/512/2622/2622256.png"
-    altinlar = ["Gram Altın", "Çeyrek Altın", "Yarım Altın", "Tam Altın", "Cumhuriyet A.", "Ata Altın", "Ons Altın", "22 Ayar Bilezik", "14 Ayar Altın", "18 Ayar Altın", "Gremse Altın", "Reşat Altın", "Hamit Altın"]
-    data_altin = {}
-    for a in altinlar: data_altin[a] = {"name": a, "logo": GOLD}
-    data_altin["Gümüş"] = {"name": "Gümüş", "logo": SILVER}
-    
-    return data_doviz, data_altin
-
-# ==============================================================================
-# KAYIT (PARÇALI KOLEKSİYON - SYSTEM_DATA)
-# ==============================================================================
-print("--- LOGO/METADATA KAYDEDİLİYOR ---")
-
-# Verileri hafızaya al
-meta_bist = get_tradingview_metadata("turkey")
-meta_abd = get_tradingview_metadata("america")
-meta_kripto = get_crypto_metadata()
-meta_fon = get_fon_metadata()
-meta_doviz, meta_altin = get_doviz_altin_metadata()
-
-# Koleksiyon Adı: system_data
-coll_ref = db.collection(u'system_data')
-
-# Parçalı Kayıt (Limitlere Takılmamak İçin)
-if meta_bist: 
-    print("BIST kaydediliyor...")
-    coll_ref.document(u'bist').set({u'data': meta_bist})
-
-if meta_abd: 
-    print("ABD kaydediliyor...")
-    coll_ref.document(u'abd').set({u'data': meta_abd})
-
-if meta_kripto: 
-    print(f"Kripto ({len(meta_kripto)} adet) kaydediliyor...")
-    coll_ref.document(u'kripto').set({u'data': meta_kripto})
-
-if meta_fon: 
-    print("Fonlar kaydediliyor...")
-    coll_ref.document(u'fon').set({u'data': meta_fon})
-
-if meta_doviz or meta_altin:
-    print("Döviz/Altın kaydediliyor...")
-    coll_ref.document(u'doviz_altin').set({
-        u'doviz': meta_doviz, 
-        u'altin': meta_altin
-    })
-
-print("✅ TÜM VERİLER BA
+    headers = {"User-Agent": "Mozilla/5.0", "X-Requested-With": "XMLHttpRequest", "Referer": "https://www.te
