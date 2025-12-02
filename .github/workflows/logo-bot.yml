@@ -4,7 +4,7 @@ on:
   schedule:
     # Her ayın 1'inde çalışır
     - cron: '0 4 1 * *'
-  # Elle tetiklemek için
+  # Elle tetiklemek için buton
   workflow_dispatch:
 
 jobs:
@@ -20,9 +20,11 @@ jobs:
         with:
           python-version: '3.11'
 
+      # --- BURASI GÜNCELLENDİ ---
+      # beautifulsoup4 EKLENDİ
       - name: Kütüphaneleri Yükle
         run: |
-          pip install firebase-admin requests pandas
+          pip install firebase-admin requests pandas beautifulsoup4
 
       - name: Logo Botunu Çalıştır
         env:
