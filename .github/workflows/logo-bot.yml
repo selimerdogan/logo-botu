@@ -20,11 +20,12 @@ jobs:
         with:
           python-version: '3.11'
 
-      # --- BURASI GÜNCELLENDİ ---
       - name: Kütüphaneleri Yükle
         run: |
-          pip install firebase-admin pandas requests
+          pip install firebase-admin requests pandas
 
+      # --- İŞTE EKSİK OLAN PARÇA ---
+      # Python'a hem Firebase hem de CMC anahtarını veriyoruz
       - name: Logo Botunu Çalıştır
         env:
           FIREBASE_KEY: ${{ secrets.FIREBASE_KEY }}
