@@ -4,7 +4,7 @@ on:
   schedule:
     # Her ayın 1'inde çalışır
     - cron: '0 4 1 * *'
-  # Elle tetiklemek için buton
+  # Elle tetiklemek için
   workflow_dispatch:
 
 jobs:
@@ -24,8 +24,6 @@ jobs:
         run: |
           pip install firebase-admin requests pandas
 
-      # --- İŞTE EKSİK OLAN PARÇA ---
-      # Python'a hem Firebase hem de CMC anahtarını veriyoruz
       - name: Logo Botunu Çalıştır
         env:
           FIREBASE_KEY: ${{ secrets.FIREBASE_KEY }}
