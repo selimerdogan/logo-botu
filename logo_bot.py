@@ -1,33 +1,196 @@
-name: Logo Guncelleme Botu
+import requests
+import firebase_admin
+from firebase_admin import credentials, firestore
+import os
+import sys
+import json
+from datetime import datetime, timedelta
 
-on:
-  schedule:
-    # Her ayın 1'inde çalışır
-    - cron: '0 4 1 * *'
-  # Elle tetiklemek için buton
-  workflow_dispatch:
+# --- AYARLAR ---
+headers_general = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"
+}
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
+# --- KİMLİK KONTROLLERİ ---
+firebase_key_str = os.environ.get('FIREBASE_KEY')
+CMC_API_KEY = os.environ.get('CMC_API_KEY')
 
-    steps:
-      - name: Kodları Çek
-        uses: actions/checkout@v3
+if not firebase_key_str:
+    if os.path.exists("serviceAccountKey.json"):
+        cred = credentials.Certificate("serviceAccountKey.json")
+    else:
+        print("HATA: Anahtar yok!")
+        sys.exit(1)
+else:
+    cred_dict = json.loads(firebase_key_str)
+    cred = credentials.Certificate(cred_dict)
 
-      - name: Python Kur
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
+try:
+    if not firebase_admin._apps:
+        firebase_admin.initialize_app(cred)
+    db = firestore.client()
+except Exception as e:
+    print(f"HATA: Firebase hatası: {e}")
+    sys.exit(1)
 
-      - name: Kütüphaneleri Yükle
-        run: |
-          pip install firebase-admin requests pandas
+# ==============================================================================
+# 1. BIST & ABD (TRADINGVIEW SCANNER)
+# ==============================================================================
+def get_tradingview_metadata(market):
+    print(f"   -> {market.upper()} Logoları aranıyor...")
+    url = f"https://scanner.tradingview.com/{market}/scan"
+    
+    payload = {
+        "filter": [{"left": "type", "operation": "in_range", "right": ["stock", "dr", "fund"]}],
+        "options": {"lang": "tr"},
+        "symbols": {"query": {"types": []}, "tickers": []},
+        "columns": ["name", "description", "logoid"],
+        "range": [0, 4000] 
+    }
+    
+    data = {}
+    base_logo_url = "https://s3-symbol-logo.tradingview.com/"
+    
+    try:
+        r = requests.post(url, json=payload, headers=headers_general, timeout=45)
+        if r.status_code == 200:
+            items = r.json().get('data', [])
+            for h in items:
+                d = h.get('d', [])
+                if len(d) > 2:
+                    sembol = d[0]
+                    isim = d[1]
+                    logo_id = d[2]
+                    
+                    logo_url = f"{base_logo_url}{logo_id}.svg" if logo_id else None
+                    if "," in isim: isim = isim.split(",")[0]
+                    
+                    data[sembol] = {"name": isim, "logo": logo_url}
+            
+            print(f"      ✅ {len(data)} adet veri bulundu.")
+    except Exception as e:
+        print(f"      ⚠️ Hata: {e}")
+    return data
 
-      # --- GÜNCELLEME BURADA ---
-      # Logo botuna da hem Firebase hem CMC anahtarını veriyoruz
-      - name: Logo Botunu Çalıştır
-        env:
-          FIREBASE_KEY: ${{ secrets.FIREBASE_KEY }}
-          CMC_API_KEY: ${{ secrets.CMC_API_KEY }}
-        run: python logo_bot.py
+# ==============================================================================
+# 2. KRİPTO (CMC API - TOP 250)
+# ==============================================================================
+def get_crypto_metadata():
+    print("2. Kripto Logoları (CMC API) çekiliyor...")
+    
+    if not CMC_API_KEY:
+        print("   -> ⚠️ CMC Key Yok! Statik liste kullanılacak.")
+        LISTE_YEDEK = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "AVAX", "DOGE", "TRX", "DOT", "LINK", "SHIB"]
+        data = {}
+        for c in LISTE_YEDEK:
+            logo = f"https://assets.coincap.io/assets/icons/{c.lower()}@2x.png"
+            data[f"{c}-USD"] = {"name": c, "logo": logo}
+        return data
+
+    url = 'https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest'
+    params = {'start': '1', 'limit': '250', 'convert': 'USD'}
+    headers = {'Accepts': 'application/json', 'X-CMC_PRO_API_KEY': CMC_API_KEY}
+    data = {}
+    
+    try:
+        r = requests.get(url, headers=headers, params=params, timeout=30)
+        if r.status_code == 200:
+            coins = r.json()['data']
+            for coin in coins:
+                sym = coin['symbol']
+                name = coin['name']
+                coin_id = coin['id']
+                logo = f"https://s2.coinmarketcap.com/static/img/coins/64x64/{coin_id}.png"
+                
+                data[f"{sym}-USD"] = {"name": name, "logo": logo}
+            print(f"   -> ✅ CMC: {len(data)} adet kripto metadata alındı.")
+    except Exception as e:
+        print(f"   -> ⚠️ CMC Hatası: {e}")
+        
+    return data
+
+# ==============================================================================
+# 3. YATIRIM FONLARI (TEFAS)
+# ==============================================================================
+def get_fon_metadata():
+    print("3. Fon İsimleri (TEFAS) taranıyor...")
+    FON_ICON = "https://cdn-icons-png.flaticon.com/512/2910/2910312.png"
+    data = {}
+    
+    # Yedek Liste
+    YEDEK_FONLAR = {
+        "AFT": "Ak Portföy Yeni Teknolojiler", "TCD": "Tacirler Portföy Değişken", "MAC": "Marmara Capital Hisse",
+        "YAY": "Yapı Kredi Yabancı Teknoloji", "IPJ": "İş Portföy Elektrikli Araçlar", "NNF": "Hedef Portföy Birinci",
+        "TI2": "İş Portföy BIST Teknoloji", "AES": "Ak Portföy Petrol", "GMR": "Inveo Portföy Gümüş",
+        "ADP": "Ak Portföy BIST 30", "IHK": "İş Portföy BIST 100 Dışı", "IDH": "İş Portföy BIST Temettü"
+    }
+    for kod, isim in YEDEK_FONLAR.items():
+        data[kod] = {"name": isim, "logo": FON_ICON}
+
+    # Canlı Çekim
+    url = "https://www.tefas.gov.tr/api/DB/BindComparisonFundReturns"
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36",
+        "X-Requested-With": "XMLHttpRequest",
+        "Referer": "https://www.tefas.gov.tr/FonKarsilastirma.aspx",
+        "Origin": "https://www.tefas.gov.tr",
+        "Content-Type": "application/json"
+    }
+    
+    session = requests.Session()
+    
+    try:
+        session.get("https://www.tefas.gov.tr/FonKarsilastirma.aspx", headers=headers, timeout=10)
+        simdi = datetime.now()
+        for i in range(7):
+            tarih_str = (simdi - timedelta(days=i)).strftime("%d.%m.%Y")
+            try:
+                payload = {"calismatipi": "2", "fontip": "YAT", "bastarih": tarih_str, "bittarih": tarih_str}
+                r = session.post(url, json=payload, headers=headers, timeout=30)
+                if r.status_code == 200:
+                    fon_listesi = r.json().get('data', [])
+                    if len(fon_listesi) > 50:
+                        for f in fon_listesi:
+                            data[f['FONKODU']] = {"name": f['FONADI'], "logo": FON_ICON}
+                        print(f"   -> ✅ TEFAS: {len(fon_listesi)} adet güncel isim alındı.")
+                        return data
+            except: continue
+    except: pass
+    
+    print(f"   -> ⚠️ TEFAS yanıt vermedi, {len(data)} adet yedek fon kullanılıyor.")
+    return data
+
+# ==============================================================================
+# 4. DÖVİZ & ALTIN
+# ==============================================================================
+def get_doviz_altin_metadata():
+    print("4. Döviz ve Altın hazırlanıyor...")
+    
+    doviz_map = {
+        "USD": {"n": "ABD Doları", "c": "us"}, "EUR": {"n": "Euro", "c": "eu"},
+        "GBP": {"n": "İngiliz Sterlini", "c": "gb"}, "CHF": {"n": "İsviçre Frangı", "c": "ch"},
+        "CAD": {"n": "Kanada Doları", "c": "ca"}, "JPY": {"n": "Japon Yeni", "c": "jp"},
+        "AUD": {"n": "Avustralya Doları", "c": "au"}, "CNY": {"n": "Çin Yuanı", "c": "cn"},
+        "EURUSD": {"n": "Euro / Dolar", "c": "eu"}, "GBPUSD": {"n": "Sterlin / Dolar", "c": "gb"},
+        "DX-Y": {"n": "Dolar Endeksi", "c": "us"}
+    }
+    liste_doviz = ["USDTRY", "EURTRY", "GBPTRY", "CHFTRY", "CADTRY", "JPYTRY", "AUDTRY", "EURUSD", "GBPUSD", "DX-Y"]
+    data_doviz = {}
+    for kur in liste_doviz:
+        kod = kur.replace("TRY", "").replace("=X", "")
+        if kod in doviz_map:
+            info = doviz_map[kod]
+            data_doviz[kur] = {"name": info["n"], "logo": f"https://flagcdn.com/w320/{info['c']}.png"}
+
+    GOLD = "https://cdn-icons-png.flaticon.com/512/1975/1975709.png"
+    SILVER = "https://cdn-icons-png.flaticon.com/512/2622/2622256.png"
+    altinlar = ["Gram Altın", "Çeyrek Altın", "Yarım Altın", "Tam Altın", "Cumhuriyet A.", "Ata Altın", "Ons Altın", "22 Ayar Bilezik", "14 Ayar Altın", "18 Ayar Altın", "Gremse Altın", "Reşat Altın", "Hamit Altın"]
+    data_altin = {}
+    for a in altinlar: data_altin[a] = {"name": a, "logo": GOLD}
+    data_altin["Gümüş"] = {"name": "Gümüş", "logo": SILVER}
+    
+    return data_doviz, data_altin
+
+# ==============================================================================
+# KAYIT (PARÇALI KOLEKSİYON - SYSTEM_DATA
