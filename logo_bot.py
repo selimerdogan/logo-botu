@@ -170,26 +170,48 @@ def get_fon_metadata():
     except: pass
     return data
 
-# ==============================================================================
-# 4. DÖVİZ & ALTIN (BAYRAK + ÖZEL İKONLAR)
-# ==============================================================================
 def get_doviz_altin_metadata():
     print("4. Döviz ve Altın hazırlanıyor...")
     
     # --- DÖVİZ ---
+    # Görseldeki eksikler: Rus Rublesi (ru), Çin Yuanı (cn), BAE Dirhemi (ae)
     doviz_map = {
-        "USD": {"n": "ABD Doları", "c": "us"}, "EUR": {"n": "Euro", "c": "eu"},
-        "GBP": {"n": "İngiliz Sterlini", "c": "gb"}, "CHF": {"n": "İsviçre Frangı", "c": "ch"},
-        "CAD": {"n": "Kanada Doları", "c": "ca"}, "JPY": {"n": "Japon Yeni", "c": "jp"},
-        "AUD": {"n": "Avustralya Doları", "c": "au"}
+        "USD": {"n": "ABD Doları", "c": "us"},
+        "EUR": {"n": "Euro", "c": "eu"},
+        "GBP": {"n": "İngiliz Sterlini", "c": "gb"},
+        "CHF": {"n": "İsviçre Frangı", "c": "ch"},
+        "CAD": {"n": "Kanada Doları", "c": "ca"},
+        "JPY": {"n": "Japon Yeni", "c": "jp"},
+        "AUD": {"n": "Avustralya Doları", "c": "au"},
+        # --- EKLENENLER ---
+        "RUB": {"n": "Rus Rublesi", "c": "ru"},   # Görselde var, ekledim
+        "CNY": {"n": "Çin Yuanı", "c": "cn"},     # Görselde var, ekledim
+        "AED": {"n": "BAE Dirhemi", "c": "ae"},   # Görselde var, ekledim
+        # İsteğe bağlı eklenebilecekler (Görselde yok ama popüler):
+        # "SAR": {"n": "Suudi Arabistan Riyali", "c": "sa"},
+        # "DKK": {"n": "Danimarka Kronu", "c": "dk"},
+        # "SEK": {"n": "İsveç Kronu", "c": "se"}
     }
-    liste_doviz = ["USDTRY", "EURTRY", "GBPTRY", "CHFTRY", "CADTRY", "JPYTRY", "AUDTRY"]
+
+    # API'den veri çekerken kullanılacak sembol listesi (Yahoo Finance formatı genelde)
+    liste_doviz = [
+        "USDTRY", "EURTRY", "GBPTRY", "CHFTRY", 
+        "CADTRY", "JPYTRY", "AUDTRY", 
+        "RUBTRY", "CNYTRY", "AEDTRY" # Listeye de eklemeyi unutmuyoruz
+    ]
+
     data_doviz = {}
     for kur in liste_doviz:
+        # Kod temizleme: "USDTRY" -> "USD"
         kod = kur.replace("TRY", "").replace("=X", "")
+        
         if kod in doviz_map:
             info = doviz_map[kod]
-            data_doviz[kur] = {"name": info["n"], "logo": f"https://flagcdn.com/w320/{info['c']}.png"}
+            # Bayrak servisi flagcdn kullanarak ülke koduyla (c) ikon oluşturuyoruz
+            data_doviz[kur] = {
+                "name": info["n"], 
+                "logo": f"https://flagcdn.com/w320/{info['c']}.png"
+            }
             
     # --- ALTIN & METALLER ---
     data_altin = {}
@@ -222,7 +244,6 @@ def get_doviz_altin_metadata():
     if "Gümüş" not in data_altin: data_altin["Gümüş"] = {"name": "Gümüş", "logo": ICON_METAL}
     
     return data_doviz, data_altin
-
 # ==============================================================================
 # KAYIT
 # ==============================================================================
