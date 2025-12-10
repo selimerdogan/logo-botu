@@ -11,11 +11,10 @@ headers_general = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"
 }
 
-# --- SABİT İKONLAR (SENİN SEÇTİKLERİN) ---
-ICON_GOLD   = "https://cdn-icons-png.freepik.com/512/7401/7401911.png"   # Altınlar
-ICON_METAL  = "https://cdn-icons-png.freepik.com/512/18377/18377665.png" # Gümüş, Platin, Paladyum
-ICON_FUND   = "https://cdn-icons-png.freepik.com/512/16753/16753112.png" # Fonlar
-ICON_OTHER  = "https://cdn-icons-png.freepik.com/512/7480/7480409.png"   # Genel Finans (Yedek)
+# --- SABİT İKONLAR ---
+ICON_GOLD   = "https://cdn-icons-png.freepik.com/512/7401/7401911.png"
+ICON_METAL  = "https://cdn-icons-png.freepik.com/512/18377/18377665.png"
+ICON_FUND   = "https://cdn-icons-png.freepik.com/512/16753/16753112.png"
 
 # --- KİMLİK KONTROLLERİ ---
 firebase_key_str = os.environ.get('FIREBASE_KEY')
@@ -39,16 +38,11 @@ except Exception as e:
     print(f"HATA: Firebase hatası: {e}")
     sys.exit(1)
 
-# ==============================================================================
-# YARDIMCI: AVATAR OLUŞTURUCU
-# ==============================================================================
 def get_avatar(text, color):
-    """Logo bulunamazsa harfli kutucuk oluşturur"""
-    # text: THYAO -> TH
     return f"https://ui-avatars.com/api/?name={text}&background={color}&color=fff&size=128&bold=true"
 
 # ==============================================================================
-# 1. BIST & ABD (TRADINGVIEW SCANNER - AVATAR DESTEKLİ)
+# 1. BIST & ABD (Piyasa Botu ile aynı anahtar: "THYAO", "AAPL")
 # ==============================================================================
 def get_tradingview_metadata(market):
     print(f"   -> {market.upper()} Logoları aranıyor...")
@@ -64,8 +58,6 @@ def get_tradingview_metadata(market):
     
     data = {}
     base_logo_url = "https://s3-symbol-logo.tradingview.com/"
-    
-    # Pazar rengi (BIST: Kırmızı, ABD: Mavi)
     bg_color = "b30000" if market == "turkey" else "0D8ABC"
     
     try:
@@ -75,20 +67,18 @@ def get_tradingview_metadata(market):
             for h in items:
                 d = h.get('d', [])
                 if len(d) > 2:
-                    sembol = d[0]
-                    isim = d[1]
+                    sembol = d[0] # Örn: THYAO
+                    isim = d[1]   # Örn: Turk Hava Yollari
                     logo_id = d[2]
                     
-                    # --- MANTIK BURADA DEĞİŞTİ ---
                     if logo_id:
-                        # Logo varsa orjinalini kullan
                         logo_url = f"{base_logo_url}{logo_id}.svg"
                     else:
-                        # Logo yoksa AVATAR kullan (Harfli kutucuk)
                         logo_url = get_avatar(sembol, bg_color)
                     
                     if "," in isim: isim = isim.split(",")[0]
                     
+                    # KRİTİK NOKTA: Anahtar 'sembol' olmalı.
                     data[sembol] = {"name": isim, "logo": logo_url}
             
             print(f"      ✅ {len(data)} adet veri bulundu.")
@@ -97,22 +87,17 @@ def get_tradingview_metadata(market):
     return data
 
 # ==============================================================================
-# 2. KRİPTO (CMC API)
+# 2. KRİPTO (Piyasa Botu ile aynı anahtar: "BTC-USD")
 # ==============================================================================
 def get_crypto_metadata():
     print("2. Kripto Logoları (CMC) çekiliyor...")
     
     if not CMC_API_KEY:
-        print("   -> ⚠️ CMC Key Yok! Statik liste kullanılacak.")
-        LISTE_YEDEK = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "AVAX", "DOGE", "TRX"]
-        data = {}
-        for c in LISTE_YEDEK:
-            logo = f"https://assets.coincap.io/assets/icons/{c.lower()}@2x.png"
-            data[f"{c}-USD"] = {"name": c, "logo": logo}
-        return data
+        print("   -> ⚠️ CMC Key Yok! Statik liste.")
+        return {}
 
     url = 'https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest'
-    params = {'start': '1', 'limit': '250', 'convert': 'USD'}
+    params = {'start': '1', 'limit': '300', 'convert': 'USD'} # Piyasa botunda 250 demiştik, burada 300 yapalım garanti olsun
     headers = {'Accepts': 'application/json', 'X-CMC_PRO_API_KEY': CMC_API_KEY}
     data = {}
     
@@ -125,7 +110,11 @@ def get_crypto_metadata():
                 name = coin['name']
                 coin_id = coin['id']
                 logo = f"https://s2.coinmarketcap.com/static/img/coins/64x64/{coin_id}.png"
-                data[f"{sym}-USD"] = {"name": name, "logo": logo}
+                
+                # KRİTİK NOKTA: Piyasa botun "BTC-USD" formatında kaydediyor.
+                # Burası da aynısı olmalı.
+                key = f"{sym}-USD"
+                data[key] = {"name": name, "logo": logo}
             print(f"   -> ✅ CMC: {len(data)} adet kripto metadata alındı.")
     except Exception as e:
         print(f"   -> ⚠️ CMC Hatası: {e}")
@@ -133,121 +122,104 @@ def get_crypto_metadata():
     return data
 
 # ==============================================================================
-# 3. YATIRIM FONLARI (TEFAS - ÖZEL İKONLU)
+# 3. FONLAR (Piyasa Botu ile aynı anahtar: "AFT", "TCD")
 # ==============================================================================
 def get_fon_metadata():
     print("3. Fon İsimleri (TEFAS) taranıyor...")
     data = {}
     
-    # Yedekler
-    YEDEK_FONLAR = {
-        "AFT": "Ak Portföy Yeni Teknolojiler", "TCD": "Tacirler Portföy Değişken", "MAC": "Marmara Capital Hisse",
-        "YAY": "Yapı Kredi Yabancı Teknoloji", "TI2": "İş Portföy Teknoloji"
-    }
-    for kod, isim in YEDEK_FONLAR.items():
-        data[kod] = {"name": isim, "logo": ICON_FUND} # Senin seçtiğin Fon İkonu
-
+    # TEFAS'tan toplu çekip isimleri alıyoruz
     url = "https://www.tefas.gov.tr/api/DB/BindComparisonFundReturns"
     headers = {"User-Agent": "Mozilla/5.0", "X-Requested-With": "XMLHttpRequest", "Referer": "https://www.tefas.gov.tr"}
-    session = requests.Session()
     
     try:
-        session.get("https://www.tefas.gov.tr/FonKarsilastirma.aspx", headers=headers, timeout=10)
+        # Son tarihi bulup istek atıyoruz
         simdi = datetime.now()
-        for i in range(7):
-            tarih_str = (simdi - timedelta(days=i)).strftime("%d.%m.%Y")
-            try:
-                r = session.post(url, json={"calismatipi": "2", "fontip": "YAT", "bastarih": tarih_str, "bittarih": tarih_str}, headers=headers, timeout=30)
-                if r.status_code == 200:
-                    l = r.json().get('data', [])
-                    if len(l) > 50:
-                        for f in l:
-                            # Tüm fonlara senin seçtiğin ikonu atıyoruz
-                            data[f['FONKODU']] = {"name": f['FONADI'], "logo": ICON_FUND}
-                        print(f"   -> ✅ TEFAS: {len(l)} adet fon işlendi.")
-                        return data
-            except: continue
-    except: pass
+        tarih_str = simdi.strftime("%d.%m.%Y")
+        
+        # Sadece son 1 günün verisi fon isimlerini almak için yeterli
+        payload = {"calismatipi": "2", "fontip": "YAT", "bastarih": tarih_str, "bittarih": tarih_str}
+        
+        r = requests.post(url, json=payload, headers=headers, timeout=30)
+        if r.status_code == 200:
+            l = r.json().get('data', [])
+            if len(l) > 0:
+                for f in l:
+                    kod = f['FONKODU']
+                    isim = f['FONADI']
+                    # Piyasa botunda anahtar direkt FON KODU (Örn: AFT)
+                    data[kod] = {"name": isim, "logo": ICON_FUND}
+                print(f"   -> ✅ TEFAS: {len(data)} adet fon işlendi.")
+    except Exception as e: 
+        print(f"Hata: {e}")
+    
     return data
 
+# ==============================================================================
+# 4. DÖVİZ & ALTIN (Piyasa Botu Eşleşmesi İçin KRİTİK ALAN)
+# ==============================================================================
 def get_doviz_altin_metadata():
     print("4. Döviz ve Altın hazırlanıyor...")
     
-    # --- DÖVİZ ---
-    # Görseldeki eksikler: Rus Rublesi (ru), Çin Yuanı (cn), BAE Dirhemi (ae)
-    doviz_map = {
+    # --- DÖVİZ EŞLEŞTİRME ---
+    # Piyasa botun "USD", "EUR" anahtarlarını kullanıyor.
+    # Logo botun eskiden "USDTRY" kullanıyordu. Bunu düzeltiyoruz.
+    
+    doviz_config = {
         "USD": {"n": "ABD Doları", "c": "us"},
         "EUR": {"n": "Euro", "c": "eu"},
         "GBP": {"n": "İngiliz Sterlini", "c": "gb"},
         "CHF": {"n": "İsviçre Frangı", "c": "ch"},
         "CAD": {"n": "Kanada Doları", "c": "ca"},
         "JPY": {"n": "Japon Yeni", "c": "jp"},
-        "AUD": {"n": "Avustralya Doları", "c": "au"},
-        # --- EKLENENLER ---
-        "RUB": {"n": "Rus Rublesi", "c": "ru"},   # Görselde var, ekledim
-        "CNY": {"n": "Çin Yuanı", "c": "cn"},     # Görselde var, ekledim
-        "AED": {"n": "BAE Dirhemi", "c": "ae"},   # Görselde var, ekledim
-        # İsteğe bağlı eklenebilecekler (Görselde yok ama popüler):
-        # "SAR": {"n": "Suudi Arabistan Riyali", "c": "sa"},
-        # "DKK": {"n": "Danimarka Kronu", "c": "dk"},
-        # "SEK": {"n": "İsveç Kronu", "c": "se"}
+        "RUB": {"n": "Rus Rublesi", "c": "ru"},
+        "CNY": {"n": "Çin Yuanı", "c": "cn"},
+        "BAE": {"n": "BAE Dirhemi", "c": "ae"}, # Piyasa botun "BAE" kodunu kullanıyor (dikkat)
+        "AUD": {"n": "Avustralya Doları", "c": "au"}
     }
 
-    # API'den veri çekerken kullanılacak sembol listesi (Yahoo Finance formatı genelde)
-    liste_doviz = [
-        "USDTRY", "EURTRY", "GBPTRY", "CHFTRY", 
-        "CADTRY", "JPYTRY", "AUDTRY", 
-        "RUBTRY", "CNYTRY", "AEDTRY" # Listeye de eklemeyi unutmuyoruz
-    ]
-
     data_doviz = {}
-    for kur in liste_doviz:
-        # Kod temizleme: "USDTRY" -> "USD"
-        kod = kur.replace("TRY", "").replace("=X", "")
-        
-        if kod in doviz_map:
-            info = doviz_map[kod]
-            # Bayrak servisi flagcdn kullanarak ülke koduyla (c) ikon oluşturuyoruz
-            data_doviz[kur] = {
-                "name": info["n"], 
-                "logo": f"https://flagcdn.com/w320/{info['c']}.png"
-            }
+    for kod, info in doviz_config.items():
+        # ANAHTAR = "USD" (Piyasa botuyla aynı)
+        data_doviz[kod] = {
+            "name": info["n"], 
+            "logo": f"https://flagcdn.com/w320/{info['c']}.png"
+        }
             
-    # --- ALTIN & METALLER ---
+    # --- ALTIN EŞLEŞTİRME ---
+    # Piyasa botun isimleri direkt siteden (Doviz.com) alıyor: "Gram Altın", "Çeyrek Altın" vs.
+    # Biz de isimleri aynı siteden çekelim ki harfiyen tutsun.
     data_altin = {}
     
-    # İsimleri siteden çekiyoruz (Doviz.com)
     try:
         r = requests.get("https://altin.doviz.com/", headers=headers_general, timeout=20)
         from bs4 import BeautifulSoup
         soup = BeautifulSoup(r.content, "html.parser")
+        
         for tr in soup.find_all("tr"):
             tds = tr.find_all("td")
             if len(tds) > 2:
-                isim = tds[0].get_text(strip=True)
-                
-                # İKON SEÇİMİ
-                if "Gümüş" in isim or "Platin" in isim or "Paladyum" in isim:
-                    secilen_ikon = ICON_METAL # Gri Metal İkonu
-                else:
-                    secilen_ikon = ICON_GOLD # Sarı Altın İkonu
+                isim = tds[0].get_text(strip=True) # Örn: "Gram Altın"
                 
                 if "Ons" not in isim:
-                    data_altin[isim] = {"name": isim, "logo": secilen_ikon}
+                    # İKON MANTIĞI
+                    if any(x in isim for x in ["Gümüş", "Platin", "Paladyum"]):
+                        ikon = ICON_METAL
+                    else:
+                        ikon = ICON_GOLD
+                    
+                    # ANAHTAR = "Gram Altın" (Piyasa botuyla aynı)
+                    data_altin[isim] = {"name": isim, "logo": ikon}
                     
     except Exception as e:
         print(f"   -> ⚠️ Altın İsim Hatası: {e}")
     
-    # Manuel eklemeler (Garanti olsun diye)
-    if "Platin" not in data_altin: data_altin["Platin"] = {"name": "Platin", "logo": ICON_METAL}
-    if "Paladyum" not in data_altin: data_altin["Paladyum"] = {"name": "Paladyum", "logo": ICON_METAL}
-    if "Gümüş" not in data_altin: data_altin["Gümüş"] = {"name": "Gümüş", "logo": ICON_METAL}
-    
     return data_doviz, data_altin
+
 # ==============================================================================
 # KAYIT
 # ==============================================================================
-print("--- LOGO/METADATA KAYDEDİLİYOR ---")
+print("--- LOGO/METADATA KAYDEDİLİYOR (EŞLEŞTİRİLMİŞ VERSİYON) ---")
 
 meta_bist = get_tradingview_metadata("turkey")
 meta_abd = get_tradingview_metadata("america")
@@ -257,11 +229,21 @@ meta_doviz, meta_altin = get_doviz_altin_metadata()
 
 coll_ref = db.collection(u'system_data')
 
+# 1. BIST
 if meta_bist: coll_ref.document(u'bist').set({u'data': meta_bist})
+
+# 2. ABD
 if meta_abd: coll_ref.document(u'abd').set({u'data': meta_abd})
+
+# 3. KRİPTO
 if meta_kripto: coll_ref.document(u'kripto').set({u'data': meta_kripto})
+
+# 4. FONLAR
 if meta_fon: coll_ref.document(u'fon').set({u'data': meta_fon})
 
+# 5. DÖVİZ & ALTIN (Tek dokümanda veya ayrı ayrı tutabilirsin, burada birleştirdim)
+# Piyasa botunda "doviz_tl" ve "altin_tl" diye geçiyor.
+# Uygulama tarafında kolaylık olsun diye burada ayırabiliriz de.
 if meta_doviz or meta_altin:
     coll_ref.document(u'doviz_altin').set({
         u'doviz': meta_doviz, 
