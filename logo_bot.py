@@ -155,15 +155,12 @@ def get_fon_metadata():
     return data
 
 # ==============================================================================
-# 4. DÖVİZ & ALTIN (MANUEL EŞLEŞTİRME - UYUMSUZLUK ÇÖZÜMÜ)
+# 4. DÖVİZ & ALTIN (MANUEL EŞLEŞTİRME - EKRAN GÖRÜNTÜSÜNE GÖRE DÜZELTİLDİ)
 # ==============================================================================
 def get_doviz_altin_metadata():
     print("4. Döviz ve Altın hazırlanıyor...")
     
-    # --- DÖVİZ ---
-    # Piyasa Botunun Kullandığı KODLAR bunlardır.
-    # Buradaki anahtarlar (USD, EUR...) Piyasa Botundaki 'found_code' ile aynı olmak ZORUNDA.
-    
+    # ... (Döviz kısmı aynı kalacak - Dokunmana gerek yok) ...
     doviz_config = {
         "USD": {"n": "ABD Doları", "c": "us"},
         "EUR": {"n": "Euro", "c": "eu"},
@@ -173,38 +170,51 @@ def get_doviz_altin_metadata():
         "JPY": {"n": "Japon Yeni", "c": "jp"},
         "RUB": {"n": "Rus Rublesi", "c": "ru"},
         "CNY": {"n": "Çin Yuanı", "c": "cn"},
-        "BAE": {"n": "BAE Dirhemi", "c": "ae"}, # Piyasa botunda "BAE" kullanıyoruz, burada da "BAE" yaptık.
+        "BAE": {"n": "BAE Dirhemi", "c": "ae"},
         "AUD": {"n": "Avustralya Doları", "c": "au"}
     }
 
     data_doviz = {}
     for kod, info in doviz_config.items():
-        # Burada anahtar "USD" oluyor. Piyasa botu da "USD" diye kaydediyor. Eşleşme TAMAM.
         data_doviz[kod] = {
             "name": info["n"], 
             "logo": f"https://flagcdn.com/w320/{info['c']}.png"
         }
             
-    # --- ALTIN & METALLER ---
-    # Piyasa botun Harem Altın veya Doviz.com kullanıyor.
-    # Oradaki isimlerin AYNISINI buraya anahtar olarak yazıyoruz.
+    # --- ALTIN & METALLER (GÜNCELLENMİŞ TAM LİSTE) ---
+    # Firebase market_data -> LIVE_PRICES -> altin_tl ekran görüntüsüne göre hazırlanmıştır.
     
     altin_listesi = [
-        "Gram Altın", "Çeyrek Altın", "Yarım Altın", "Tam Altın", 
-        "Gremse Altın", "Ata Altın", "Ons Altın", "14 Ayar Altın", "22 Ayar Bilezik",
-        "Gümüş", "Platin", "Paladyum"
+        "14 Ayar Bilezik",
+        "18 Ayar Bilezik",
+        "22 Ayar Bilezik",
+        "Ata Altın",
+        "Beşli Altın",
+        "Cumhuriyet Altını",
+        "Gram Altın",
+        "Gram Gümüş",      # Eskiden "Gümüş" idi
+        "Gram Has Altın",
+        "Gram Paladyum",   # Eskiden "Paladyum" idi
+        "Gram Platin",     # Eskiden "Platin" idi
+        "Gremse Altın",
+        "Hamit Altın",
+        "Reşat Altın",
+        "Tam Altın",
+        "Yarım Altın",
+        "Çeyrek Altın",
+        "İkibuçuk Altın"
     ]
     
     data_altin = {}
     for isim in altin_listesi:
         
-        # İkon Seçimi
+        # İkon Mantığı: İsminde Gümüş, Platin veya Paladyum geçiyorsa METAL ikonu ver
         if any(x in isim for x in ["Gümüş", "Platin", "Paladyum"]):
             ikon = ICON_METAL
         else:
             ikon = ICON_GOLD
             
-        # Anahtar ve İsim aynı olsun ki karmaşa çıkmasın
+        # Anahtar (Key) ve İsim (Name) aynı olsun ki eşleşme %100 olsun
         data_altin[isim] = {"name": isim, "logo": ikon}
     
     return data_doviz, data_altin
