@@ -169,7 +169,6 @@ def get_doviz_altin_metadata():
         "EUR": {"n": "Euro", "c": "eu"},
         "GBP": {"n": "İngiliz Sterlini", "c": "gb"},
         "CHF": {"n": "İsviçre Frangı", "c": "ch"},
-        "CAD": {"n": "Kanada Doları", "c": "ca"},
         "JPY": {"n": "Japon Yeni", "c": "jp"},
         "RUB": {"n": "Rus Rublesi", "c": "ru"},
         "CNY": {"n": "Çin Yuanı", "c": "cn"},
