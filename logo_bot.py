@@ -154,9 +154,15 @@ def get_fon_metadata():
     
     return data
 
-# --- DÖVİZ (GÜNCELLENMİŞ) ---
-    # Piyasa botunun (Scraper) çektiği liste ile %100 uyumlu hale getirildi.
+def get_doviz_altin_metadata():
+    print("--- LOGO/METADATA HAZIRLANIYOR (Döviz & Altın) ---")
     
+    # İKON TANIMLARI (Eksik olmasın diye buraya ekledim)
+    ICON_GOLD = "https://cdn-icons-png.flaticon.com/512/2535/2535565.png"  # Altın İkonu
+    ICON_METAL = "https://cdn-icons-png.flaticon.com/512/2645/2645859.png" # Gümüş/Platin İkonu
+
+    # 1. DÖVİZ YAPILANDIRMASI
+    # Kanada Doları (CAD) eklendi.
     doviz_config = {
         "USD": {"n": "ABD Doları", "c": "us"},
         "EUR": {"n": "Euro", "c": "eu"},
@@ -166,7 +172,7 @@ def get_fon_metadata():
         "RUB": {"n": "Rus Rublesi", "c": "ru"},
         "CNY": {"n": "Çin Yuanı", "c": "cn"},
         "BAE": {"n": "BAE Dirhemi", "c": "ae"},
-        "CAD": {"n": "Kanada Doları", "c": "ca"}  # <--- YENİ EKLENEN
+        "CAD": {"n": "Kanada Doları", "c": "ca"}
     }
 
     data_doviz = {}
@@ -176,9 +182,8 @@ def get_fon_metadata():
             "logo": f"https://flagcdn.com/w320/{info['c']}.png"
         }
             
-    # --- ALTIN & METALLER (GÜNCELLENMİŞ TAM LİSTE) ---
-    # Firebase market_data -> LIVE_PRICES -> altin_tl ekran görüntüsüne göre hazırlanmıştır.
-    
+    # 2. ALTIN & METALLER (GÜNCELLENMİŞ TAM LİSTE)
+    # Firebase market_data -> LIVE_PRICES -> altin_tl ekran görüntüsüne göre.
     altin_listesi = [
         "14 Ayar Bilezik",
         "18 Ayar Bilezik",
