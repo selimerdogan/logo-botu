@@ -21,10 +21,10 @@ jobs:
           python-version: '3.11'
 
       # --- BURASI GÜNCELLENDİ ---
-      # beautifulsoup4 EKLENDİ
+      # Pillow (Resim işleme için) LİSTEYE EKLENDİ
       - name: Kütüphaneleri Yükle
         run: |
-          pip install firebase-admin requests pandas beautifulsoup4
+          pip install firebase-admin requests pandas beautifulsoup4 Pillow
 
       - name: Logo Botunu Çalıştır
         env:
