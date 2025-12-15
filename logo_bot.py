@@ -158,8 +158,9 @@ def get_doviz_altin_metadata():
     print("--- LOGO/METADATA HAZIRLANIYOR (Döviz & Altın) ---")
     
     # İKON TANIMLARI (Eksik olmasın diye buraya ekledim)
-    ICON_GOLD = "https://cdn-icons-png.flaticon.com/512/2535/2535565.png"  # Altın İkonu
-    ICON_METAL = "https://cdn-icons-png.flaticon.com/512/2645/2645859.png" # Gümüş/Platin İkonu
+
+    ICON_GOLD = "https://firebasestorage.googleapis.com/v0/b/vario-264d9.firebasestorage.app/o/altin.png?alt=media&token=5b6d72f7-b71d-4c3e-bd3f-203bfec892ed"   # Altın İkonu
+    ICON_METAL = "https://firebasestorage.googleapis.com/v0/b/vario-264d9.firebasestorage.app/o/gumus.png?alt=media&token=6ad7c54e-aebc-4879-bf4b-66d45e8a8233"  # Gümüş/Platin İkonu
 
     # 1. DÖVİZ YAPILANDIRMASI
     # Kanada Doları (CAD) eklendi.
