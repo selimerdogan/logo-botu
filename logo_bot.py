@@ -154,15 +154,8 @@ def get_fon_metadata():
     
     return data
 
-# ==============================================================================
-# 4. DÖVİZ & ALTIN (MANUEL EŞLEŞTİRME - DOVIZ DÜZELTME)
-# ==============================================================================
-def get_doviz_altin_metadata():
-    print("4. Döviz ve Altın hazırlanıyor...")
-    
-    # --- DÖVİZ (GÜNCELLENMİŞ) ---
+# --- DÖVİZ (GÜNCELLENMİŞ) ---
     # Piyasa botunun (Scraper) çektiği liste ile %100 uyumlu hale getirildi.
-    # AUD (Avustralya Doları) veri kaynağında olmadığı için buradan çıkarıldı.
     
     doviz_config = {
         "USD": {"n": "ABD Doları", "c": "us"},
@@ -172,7 +165,8 @@ def get_doviz_altin_metadata():
         "JPY": {"n": "Japon Yeni", "c": "jp"},
         "RUB": {"n": "Rus Rublesi", "c": "ru"},
         "CNY": {"n": "Çin Yuanı", "c": "cn"},
-        "BAE": {"n": "BAE Dirhemi", "c": "ae"}
+        "BAE": {"n": "BAE Dirhemi", "c": "ae"},
+        "CAD": {"n": "Kanada Doları", "c": "ca"}  # <--- YENİ EKLENEN
     }
 
     data_doviz = {}
