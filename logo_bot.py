@@ -12,9 +12,9 @@ headers_general = {
 }
 
 # --- SABİT İKONLAR ---
-ICON_GOLD   = "https://cdn-icons-png.freepik.com/512/7401/7401911.png"
-ICON_METAL  = "https://cdn-icons-png.freepik.com/512/18377/18377665.png"
-ICON_FUND   = "https://cdn-icons-png.freepik.com/512/16753/16753112.png"
+ICON_GOLD = "https://firebasestorage.googleapis.com/v0/b/vario-264d9.firebasestorage.app/o/altin.png?alt=media&token=5b6d72f7-b71d-4c3e-bd3f-203bfec892ed"
+ICON_METAL = "https://firebasestorage.googleapis.com/v0/b/vario-264d9.firebasestorage.app/o/gumus.png?alt=media&token=6ad7c54e-aebc-4879-bf4b-66d45e8a8233"
+ICON_FUND   = "https://firebasestorage.googleapis.com/v0/b/vario-264d9.firebasestorage.app/o/fon.png?alt=media&token=4fa44daa-d0e4-462e-8532-fc91b45f7bb1"
 
 # --- KİMLİK KONTROLLERİ ---
 firebase_key_str = os.environ.get('FIREBASE_KEY')
