@@ -321,7 +321,11 @@ if __name__ == "__main__":
     # 1. Verileri Çek ve Yükle
     meta_kripto = get_crypto_metadata()
     meta_bist = get_tradingview_metadata("turkey")
-    # meta_abd = get_tradingview_metadata("america") # İstersen yorumu kaldır
+    
+    # --- ABD HİSSELERİNİ AKTİF ETTİK ---
+    meta_abd = get_tradingview_metadata("america") 
+    # -----------------------------------
+    
     meta_fon = get_fon_metadata()
     meta_doviz, meta_altin = get_doviz_altin_metadata()
 
@@ -332,7 +336,11 @@ if __name__ == "__main__":
         coll_ref.document(u'bist').set({u'data': meta_bist})
         print("✅ BIST veritabanı güncellendi.")
         
-    # if meta_abd: coll_ref.document(u'abd').set({u'data': meta_abd})
+    # --- ABD HİSSELERİNİ KAYDETMEYİ AKTİF ETTİK ---
+    if meta_abd: 
+        coll_ref.document(u'abd').set({u'data': meta_abd})
+        print("✅ ABD Borsası veritabanı güncellendi.")
+    # ----------------------------------------------
     
     if meta_kripto: 
         coll_ref.document(u'kripto').set({u'data': meta_kripto})
