@@ -8,23 +8,23 @@ import io
 from PIL import Image  # Resim işleme için gerekli (pip install Pillow)
 from datetime import datetime
 
-# --- AYARLAR ---
+# --- GENEL AYARLAR ---
 headers_general = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
 
 # --- KİMLİK KONTROLLERİ VE BAŞLATMA ---
 firebase_key_str = os.environ.get('FIREBASE_KEY')
 CMC_API_KEY = os.environ.get('CMC_API_KEY')
 
-# Firebase Storage Bucket Adı (Senin linkinden aldım)
+# Firebase Storage Bucket Adı
 BUCKET_NAME = "vario-264d9.firebasestorage.app"
 
 if not firebase_key_str:
     if os.path.exists("serviceAccountKey.json"):
         cred = credentials.Certificate("serviceAccountKey.json")
     else:
-        print("HATA: Anahtar yok!")
+        print("HATA: Anahtar (FIREBASE_KEY) bulunamadı!")
         sys.exit(1)
 else:
     cred_dict = json.loads(firebase_key_str)
@@ -43,71 +43,87 @@ except Exception as e:
     sys.exit(1)
 
 # ==============================================================================
-# YARDIMCI FONKSİYON: RESMİ İNDİR, KÜÇÜLT, YÜKLE
+# YARDIMCI FONKSİYON: RESMİ İNDİR, KÜÇÜLT, YÜKLE (SVG DESTEKLİ)
 # ==============================================================================
 def upload_logo(original_url, file_name, folder_name):
     """
-    Verilen URL'deki resmi indirir, 128x128 PNG yapar ve Firebase Storage'a yükler.
+    Verilen URL'deki resmi indirir.
+    - Eğer SVG ise: Direkt yükler (Pillow SVG açamaz, hata vermesin diye).
+    - Eğer PNG/JPG ise: 128x128 yapar, PNG olarak yükler.
     Geriye Firebase'deki kalıcı public linki döner.
     """
-    # 1. Eğer link zaten bizim Firebase'e aitse, işlem yapma, aynen döndür.
-    if "firebasestorage.googleapis.com" in original_url:
+    # 1. Eğer link zaten bizim Firebase'e veya FlagCDN'e aitse elleme
+    if "firebasestorage.googleapis.com" in original_url or "flagcdn.com" in original_url:
         return original_url
 
-    # 2. Eğer logo yoksa veya avatar servisi ise (Tasarruf için avatarı yüklemiyoruz, direkt kullanıyoruz)
+    # 2. Avatar servisi ise atla (Tasarruf)
     if "ui-avatars.com" in original_url or not original_url:
         return original_url
 
     try:
         # 3. Resmi İndir
-        resp = requests.get(original_url, headers=headers_general, timeout=10)
+        resp = requests.get(original_url, headers=headers_general, timeout=15)
         if resp.status_code != 200:
-            return original_url # İndirilemezse eskisini kullan
+            return original_url 
 
-        # 4. Resmi İşle (Pillow ile)
-        img_bytes = io.BytesIO(resp.content)
+        content_type = resp.headers.get('Content-Type', '')
+        file_data = resp.content
+
+        # --- SENARYO A: DOSYA SVG İSE (TradingView Hatasını Çözen Kısım) ---
+        if "svg" in content_type or original_url.endswith(".svg") or b"<svg" in file_data[:100]:
+            blob_path = f"logos/{folder_name}/{file_name}.svg"
+            blob = bucket.blob(blob_path)
+            blob.upload_from_string(file_data, content_type="image/svg+xml")
+            blob.make_public()
+            return blob.public_url
+
+        # --- SENARYO B: DOSYA RESİM İSE (PNG, JPG) ---
+        img_bytes = io.BytesIO(file_data)
         img = Image.open(img_bytes)
         
-        # PNG'ye çevir ve RGBA (Şeffaflık) koru
         if img.mode != 'RGBA':
             img = img.convert('RGBA')
             
-        # Boyutlandır (Standart 128x128px)
         img = img.resize((128, 128), Image.Resampling.LANCZOS)
 
-        # Çıktı için hazırla
         output_io = io.BytesIO()
         img.save(output_io, format='PNG', optimize=True)
         image_data = output_io.getvalue()
 
-        # 5. Firebase Storage'a Yükle
-        # Dosya yolu: logos/kripto/BTC.png gibi olacak
         blob_path = f"logos/{folder_name}/{file_name}.png"
         blob = bucket.blob(blob_path)
         
         blob.upload_from_string(image_data, content_type="image/png")
-        blob.make_public() # Dosyayı herkese açık yap
+        blob.make_public()
 
-        # Yeni Linki Döndür
         return blob.public_url
 
     except Exception as e:
-        print(f"   ⚠️ Hata ({file_name}): {e}")
-        return original_url # Hata olursa orijinal linki kullanmaya devam et
+        # Hata olsa bile sistemi durdurma, orijinal linki kullan
+        # print(f"   ⚠️ Hata ({file_name}): {e}") 
+        return original_url 
 
 # ==============================================================================
-# 1. BIST & ABD (GÜNCELLENMİŞ - UPLOAD EKLENDİ)
+# 1. BIST & ABD (GÜNCELLENMİŞ - GÜÇLENDİRİLMİŞ HEADERS)
 # ==============================================================================
 def get_tradingview_metadata(market):
     print(f"   -> {market.upper()} Logoları aranıyor ve yükleniyor...")
     url = f"https://scanner.tradingview.com/{market}/scan"
+    
+    # TradingView Bot Korumasını Aşmak İçin Gerekli Başlıklar
+    headers_tv = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Origin": "https://www.tradingview.com",
+        "Referer": "https://www.tradingview.com/",
+        "Content-Type": "application/json"
+    }
     
     payload = {
         "filter": [{"left": "type", "operation": "in_range", "right": ["stock", "dr", "fund"]}],
         "options": {"lang": "tr"},
         "symbols": {"query": {"types": []}, "tickers": []},
         "columns": ["name", "description", "logoid"],
-        "range": [0, 4000] 
+        "range": [0, 6000] 
     }
     
     data = {}
@@ -115,51 +131,56 @@ def get_tradingview_metadata(market):
     bg_color = "b30000" if market == "turkey" else "0D8ABC"
     
     try:
-        r = requests.post(url, json=payload, headers=headers_general, timeout=45)
-        if r.status_code == 200:
-            items = r.json().get('data', [])
-            count = 0
-            
-            print(f"      Toplam {len(items)} hisse işlenecek. Bu işlem biraz sürebilir...")
+        r = requests.post(url, json=payload, headers=headers_tv, timeout=60)
+        
+        if r.status_code != 200:
+            print(f"      ⛔ HATA: TradingView yanıt vermedi! Kod: {r.status_code}")
+            return {}
 
-            for h in items:
-                d = h.get('d', [])
-                if len(d) > 2:
-                    sembol = d[0] # Örn: THYAO
-                    isim = d[1]   
-                    logo_id = d[2]
-                    
-                    if logo_id:
-                        raw_url = f"{base_logo_url}{logo_id}.svg"
-                        # BURADA UPLOAD FONKSİYONUNU ÇAĞIRIYORUZ
-                        # SVG'leri de indirip PNG'ye çevirecek.
-                        final_logo = upload_logo(raw_url, sembol, f"stocks_{market}")
-                    else:
-                        final_logo = f"https://ui-avatars.com/api/?name={sembol}&background={bg_color}&color=fff&size=128&bold=true"
-                    
-                    if "," in isim: isim = isim.split(",")[0]
-                    
-                    data[sembol] = {"name": isim, "logo": final_logo}
-                    
-                    # İlerleme Çubuğu (Log kirliliği olmasın diye her 50 tanede bir yazdır)
-                    count += 1
-                    if count % 50 == 0:
-                        print(f"      Processing... {count}/{len(items)}")
+        items = r.json().get('data', [])
+        print(f"      ℹ️  TradingView'dan {len(items)} adet veri çekildi.")
 
-            print(f"      ✅ {market.upper()}: {len(data)} adet logo güncellendi.")
+        count = 0
+        print(f"      🚀 İşlem başlıyor... Toplam {len(items)} hisse.")
+
+        for h in items:
+            d = h.get('d', [])
+            if len(d) > 2:
+                sembol = d[0] 
+                isim = d[1]   
+                logo_id = d[2]
+                
+                if logo_id:
+                    raw_url = f"{base_logo_url}{logo_id}.svg"
+                    folder_name = f"stocks_{market}" 
+                    # Burada SVG destekli upload fonksiyonu çalışacak
+                    final_logo = upload_logo(raw_url, sembol, folder_name)
+                else:
+                    final_logo = f"https://ui-avatars.com/api/?name={sembol}&background={bg_color}&color=fff&size=128&bold=true"
+                
+                if "," in isim: isim = isim.split(",")[0]
+                
+                data[sembol] = {"name": isim, "logo": final_logo}
+                
+                count += 1
+                if count % 50 == 0:
+                    print(f"      Processing... {count}/{len(items)}")
+
+        print(f"      ✅ {market.upper()}: {len(data)} adet logo başarıyla işlendi.")
+    
     except Exception as e:
-        print(f"      ⚠️ Hata: {e}")
+        print(f"      ⛔ KRİTİK HATA (TradingView): {e}")
+        
     return data
 
 # ==============================================================================
-# 2. KRİPTO (GÜNCELLENMİŞ - UPLOAD EKLENDİ)
+# 2. KRİPTO
 # ==============================================================================
 def get_crypto_metadata():
     print("2. Kripto Logoları (CMC) çekiliyor ve yükleniyor...")
     
     if not CMC_API_KEY:
         print("   -> ⚠️ CMC Key Yok! Manuel liste.")
-        # Manuel listedekileri de upload edelim
         btc_url = upload_logo("https://s2.coinmarketcap.com/static/img/coins/64x64/1.png", "BTC-USD", "crypto")
         eth_url = upload_logo("https://s2.coinmarketcap.com/static/img/coins/64x64/1027.png", "ETH-USD", "crypto")
         return {
@@ -184,10 +205,7 @@ def get_crypto_metadata():
                 coin_id = coin['id']
                 raw_logo = f"https://s2.coinmarketcap.com/static/img/coins/64x64/{coin_id}.png"
                 
-                # Piyasada kullanılan ID formatı
                 key = f"{sym}-USD"
-                
-                # UPLOAD İŞLEMİ
                 final_logo = upload_logo(raw_logo, key, "crypto")
                 
                 data[key] = {"name": name, "logo": final_logo}
@@ -199,19 +217,24 @@ def get_crypto_metadata():
     return data
 
 # ==============================================================================
-# 3. FONLAR
+# 3. FONLAR (TEFAS - YENİ MAVİ İKON & HATA DÜZELTMESİ)
 # ==============================================================================
 def get_fon_metadata():
-    # Fonlar için şimdilik tek bir ikon kullanıyoruz, binlerce fonu tek tek yüklemeye gerek yok.
-    # Senin belirlediğin "FON_ICON" zaten Firebase'de.
     print("3. Fon İsimleri (TEFAS) taranıyor...")
     data = {}
     
-    # Senin verdiğin sabit ikon (zaten firebase linki)
-    ICON_FUND = "https://firebasestorage.googleapis.com/v0/b/vario-264d9.firebasestorage.app/o/fon.png?alt=media&token=4fa44daa-d0e4-462e-8532-fc91b45f7bb1"
+    # SENİN VERDİĞİN YENİ İKON (Varlık Logo)
+    ICON_FUND = "https://firebasestorage.googleapis.com/v0/b/vario-264d9.firebasestorage.app/o/varl%C4%B1k_Logo%2Ffon.png?alt=media&token=00855c67-cda8-4dd6-a4e8-f8c3fb93ebae"
     
     url = "https://www.tefas.gov.tr/api/DB/BindComparisonFundReturns"
-    headers = {"User-Agent": "Mozilla/5.0", "X-Requested-With": "XMLHttpRequest", "Referer": "https://www.tefas.gov.tr"}
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "X-Requested-With": "XMLHttpRequest",
+        "Referer": "https://www.tefas.gov.tr",
+        "Origin": "https://www.tefas.gov.tr",
+        "Content-Type": "application/json"
+    }
     
     try:
         simdi = datetime.now()
@@ -219,31 +242,37 @@ def get_fon_metadata():
         payload = {"calismatipi": "2", "fontip": "YAT", "bastarih": tarih_str, "bittarih": tarih_str}
         
         r = requests.post(url, json=payload, headers=headers, timeout=30)
-        if r.status_code == 200:
+        
+        try:
             l = r.json().get('data', [])
-            if len(l) > 0:
-                for f in l:
-                    kod = f['FONKODU']
-                    isim = f['FONADI']
-                    data[kod] = {"name": isim, "logo": ICON_FUND}
-                print(f"   -> ✅ TEFAS: {len(data)} adet fon işlendi.")
+        except json.JSONDecodeError:
+            print("   ⚠️ TEFAS sunucusu yanıt vermedi, liste boş geçiliyor.")
+            l = []
+
+        if len(l) > 0:
+            for f in l:
+                kod = f['FONKODU']
+                isim = f['FONADI']
+                # Tüm fonlara sabit mavi logoyu atıyoruz
+                data[kod] = {"name": isim, "logo": ICON_FUND}
+            print(f"   -> ✅ TEFAS: {len(data)} adet fon işlendi.")
+            
     except Exception as e: 
-        print(f"Hata: {e}")
+        print(f"Hata (TEFAS): {e}")
     
     return data
 
 # ==============================================================================
-# 4. DÖVİZ & ALTIN (FlagCDN ve Sabit İkonlar)
+# 4. DÖVİZ & ALTIN
 # ==============================================================================
-def get_doviz_altin_metadata():
+def get_doviz_altin_metadata(): 
     print("--- LOGO/METADATA HAZIRLANIYOR (Döviz & Altın) ---")
     
-    # Senin verdiğin Firebase Linkleri (Zaten yüklenmiş)
-    ICON_GOLD = "https://firebasestorage.googleapis.com/v0/b/vario-264d9.firebasestorage.app/o/altin.png?alt=media&token=5b6d72f7-b71d-4c3e-bd3f-203bfec892ed"
-    ICON_METAL = "https://firebasestorage.googleapis.com/v0/b/vario-264d9.firebasestorage.app/o/gumus.png?alt=media&token=6ad7c54e-aebc-4879-bf4b-66d45e8a8233"
+    # Senin verdiğin Firebase Linkleri
+    ICON_GOLD = "https://firebasestorage.googleapis.com/v0/b/vario-264d9.firebasestorage.app/o/varl%C4%B1k_Logo%2Faltin.png?alt=media&token=59ceaffd-adca-48ba-9251-176f88e4b115"
+    ICON_METAL = "https://firebasestorage.googleapis.com/v0/b/vario-264d9.firebasestorage.app/o/varl%C4%B1k_Logo%2Fgumus.png?alt=media&token=56f3452f-acca-4a92-8afb-870f361893cb"
 
     # 1. DÖVİZ
-    # Bayrakları indirmemize gerek yok, FlagCDN CDN olarak çok iyidir ve sabit kalır.
     doviz_config = {
         "USD": {"n": "ABD Doları", "c": "us"},
         "EUR": {"n": "Euro", "c": "eu"},
@@ -292,7 +321,7 @@ if __name__ == "__main__":
     # 1. Verileri Çek ve Yükle
     meta_kripto = get_crypto_metadata()
     meta_bist = get_tradingview_metadata("turkey")
-    # meta_abd = get_tradingview_metadata("america") # İstersen yorumu kaldır (Çok uzun sürer!)
+    # meta_abd = get_tradingview_metadata("america") # İstersen yorumu kaldır
     meta_fon = get_fon_metadata()
     meta_doviz, meta_altin = get_doviz_altin_metadata()
 
