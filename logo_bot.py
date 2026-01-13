@@ -208,7 +208,7 @@ def get_crypto_metadata():
 def get_fon_metadata():
     print("3. Fon İsimleri (TEFAS) taranıyor...")
     data = {}
-    ICON_FUND = "https://firebasestorage.googleapis.com/v0/b/vario-264d9.firebasestorage.app/o/varl%C4%B1k_Logo%2Ffon.png?alt=media&token=00855c67-cda8-4dd6-a4e8-f8c3fb93ebae"
+    ICON_FUND = "https://firebasestorage.googleapis.com/v0/b/vario-264d9.firebasestorage.app/o/logos%2Ffon%2Ffon.png?alt=media&token=e3a51a80-b4d7-463d-8875-dca9b3addc82"
     
     url = "https://www.tefas.gov.tr/api/DB/BindComparisonFundReturns"
     headers = {
@@ -247,8 +247,8 @@ def get_fon_metadata():
 # ==============================================================================
 def get_doviz_altin_metadata(): 
     print("--- LOGO/METADATA HAZIRLANIYOR (Döviz & Altın) ---")
-    ICON_GOLD = "https://firebasestorage.googleapis.com/v0/b/vario-264d9.firebasestorage.app/o/varl%C4%B1k_Logo%2Faltin.png?alt=media&token=59ceaffd-adca-48ba-9251-176f88e4b115"
-    ICON_METAL = "https://firebasestorage.googleapis.com/v0/b/vario-264d9.firebasestorage.app/o/varl%C4%B1k_Logo%2Fgumus.png?alt=media&token=56f3452f-acca-4a92-8afb-870f361893cb"
+    ICON_GOLD = "https://firebasestorage.googleapis.com/v0/b/vario-264d9.firebasestorage.app/o/logos%2Femtia%2Faltin.png?alt=media&token=fc20833e-acea-4580-8b1b-baf768ff1f24"
+    ICON_METAL = "https://firebasestorage.googleapis.com/v0/b/vario-264d9.firebasestorage.app/o/logos%2Femtia%2Fgumus.png?alt=media&token=0938f6bd-9c56-4c64-ac5c-548e92dff1d3"
 
     doviz_config = {
         "USD": {"n": "ABD Doları", "c": "us"}, "EUR": {"n": "Euro", "c": "eu"},
