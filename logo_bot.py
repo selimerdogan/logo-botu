@@ -5,8 +5,8 @@ import os
 import sys
 import json
 import io
-import uuid # <-- YENİ EKLENDİ (Token için şart)
-from PIL import Image  # Resim işleme için gerekli (pip install Pillow)
+import uuid 
+from PIL import Image 
 from datetime import datetime
 
 # --- GENEL AYARLAR ---
@@ -17,8 +17,6 @@ headers_general = {
 # --- KİMLİK KONTROLLERİ VE BAŞLATMA ---
 firebase_key_str = os.environ.get('FIREBASE_KEY')
 CMC_API_KEY = os.environ.get('CMC_API_KEY')
-
-# Firebase Storage Bucket Adı
 BUCKET_NAME = "vario-264d9.firebasestorage.app"
 
 if not firebase_key_str:
@@ -33,101 +31,99 @@ else:
 
 try:
     if not firebase_admin._apps:
-        # Storage Bucket ayarını buraya ekledik
-        firebase_admin.initialize_app(cred, {
-            'storageBucket': BUCKET_NAME
-        })
+        firebase_admin.initialize_app(cred, {'storageBucket': BUCKET_NAME})
     db = firestore.client()
-    bucket = storage.bucket() # Storage erişimi
+    bucket = storage.bucket()
 except Exception as e:
     print(f"HATA: Firebase hatası: {e}")
     sys.exit(1)
 
 # ==============================================================================
-# YARDIMCI FONKSİYON: RESMİ İNDİR, KÜÇÜLT, YÜKLE (TOKEN DESTEKLİ)
+# YARDIMCI: VERİYİ PARÇALA VE KAYDET (1MB LİMİTİ İÇİN)
+# ==============================================================================
+def save_data_in_chunks(collection_name, base_doc_name, big_data, chunk_size=2000):
+    """
+    Firestore 1MB limitini aşmamak için veriyi abd_1, abd_2 gibi böler.
+    """
+    coll_ref = db.collection(collection_name)
+    items = list(big_data.items())
+    total_items = len(items)
+    
+    # Parça sayısını hesapla
+    total_chunks = (total_items // chunk_size) + 1
+    
+    print(f"   💾 '{base_doc_name}' verisi {total_chunks} parçaya bölünüyor ({total_items} kayıt)...")
+
+    for i in range(total_chunks):
+        start = i * chunk_size
+        end = start + chunk_size
+        chunk_items = items[start:end]
+        
+        if not chunk_items: continue
+        
+        chunk_dict = dict(chunk_items)
+        doc_name = f"{base_doc_name}_{i+1}" # Örn: abd_1, abd_2
+        
+        try:
+            coll_ref.document(doc_name).set({u'data': chunk_dict})
+            print(f"      ✅ {doc_name} kaydedildi ({len(chunk_dict)} kayıt).")
+        except Exception as e:
+            print(f"      ❌ {doc_name} kaydederken hata: {e}")
+
+# ==============================================================================
+# YARDIMCI FONKSİYON: RESMİ YÜKLE
 # ==============================================================================
 def upload_logo(original_url, file_name, folder_name):
-    """
-    Verilen URL'deki resmi indirir, Firebase'e yükler ve
-    MOBİL UYUMLU (Erişim Token'lı) link döner.
-    """
-    # 1. Eğer link zaten bizim Firebase'e veya FlagCDN'e aitse elleme
     if "firebasestorage.googleapis.com" in original_url or "flagcdn.com" in original_url:
         return original_url
-
-    # 2. Avatar servisi ise atla (Tasarruf)
     if "ui-avatars.com" in original_url or not original_url:
         return original_url
 
     try:
-        # 3. Resmi İndir
         resp = requests.get(original_url, headers=headers_general, timeout=15)
-        if resp.status_code != 200:
-            return original_url 
+        if resp.status_code != 200: return original_url 
 
         content_type = resp.headers.get('Content-Type', '')
         file_data = resp.content
-
-        # Dosya Uzantısı ve Tipi Belirleme
-        # --- SENARYO A: DOSYA SVG İSE ---
+        
         if "svg" in content_type or original_url.endswith(".svg") or b"<svg" in file_data[:100]:
             extension = "svg"
             final_content_type = "image/svg+xml"
-            blob_data = file_data # SVG direkt yüklenir
-        
-        # --- SENARYO B: DOSYA RESİM İSE (PNG, JPG) ---
+            blob_data = file_data
         else:
             img_bytes = io.BytesIO(file_data)
             img = Image.open(img_bytes)
-            
-            if img.mode != 'RGBA':
-                img = img.convert('RGBA')
-            
+            if img.mode != 'RGBA': img = img.convert('RGBA')
             img = img.resize((128, 128), Image.Resampling.LANCZOS)
-
             output_io = io.BytesIO()
             img.save(output_io, format='PNG', optimize=True)
             blob_data = output_io.getvalue()
             extension = "png"
             final_content_type = "image/png"
 
-        # --- UPLOAD VE TOKEN İŞLEMİ (DÜZELTİLDİ) ---
         blob_path = f"logos/{folder_name}/{file_name}.{extension}"
         blob = bucket.blob(blob_path)
-        
-        # 1. Yeni Token Oluştur
         new_token = str(uuid.uuid4())
-        
-        # 2. Metadata'ya Token'ı Ekle
         blob.metadata = {"firebaseStorageDownloadTokens": new_token}
-        
-        # 3. Yükle
         blob.upload_from_string(blob_data, content_type=final_content_type)
         
-        # 4. İstemci (App) için Download URL oluştur
-        # make_public() yerine bu yöntemi kullanıyoruz çünkü daha güvenli ve mobil uyumlu.
         encoded_path = blob_path.replace("/", "%2F") 
         download_url = f"https://firebasestorage.googleapis.com/v0/b/{BUCKET_NAME}/o/{encoded_path}?alt=media&token={new_token}"
-
         return download_url
 
     except Exception as e:
-        # Hata olsa bile sistemi durdurma, orijinal linki kullan
-        # print(f"   ⚠️ Hata ({file_name}): {e}") 
         return original_url 
 
 # ==============================================================================
-# 1. BIST & ABD (GÜNCELLENMİŞ - GÜÇLENDİRİLMİŞ HEADERS)
+# 1. BIST & ABD 
 # ==============================================================================
 def get_tradingview_metadata(market):
     print(f"   -> {market.upper()} Logoları aranıyor ve yükleniyor...")
     url = f"https://scanner.tradingview.com/{market}/scan"
     
-    # TradingView Bot Korumasını Aşmak İçin Gerekli Başlıklar
     headers_tv = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Origin": "https://www.tradingview.com",
-        "Referer": "https://www.tradingview.com/",
         "Content-Type": "application/json"
     }
     
@@ -145,17 +141,12 @@ def get_tradingview_metadata(market):
     
     try:
         r = requests.post(url, json=payload, headers=headers_tv, timeout=60)
-        
-        if r.status_code != 200:
-            print(f"      ⛔ HATA: TradingView yanıt vermedi! Kod: {r.status_code}")
-            return {}
+        if r.status_code != 200: return {}
 
         items = r.json().get('data', [])
-        print(f"      ℹ️  TradingView'dan {len(items)} adet veri çekildi.")
-
+        print(f"      ℹ️  TradingView'dan {len(items)} veri çekildi.")
+        
         count = 0
-        print(f"      🚀 İşlem başlıyor... Toplam {len(items)} hisse.")
-
         for h in items:
             d = h.get('d', [])
             if len(d) > 2:
@@ -166,23 +157,18 @@ def get_tradingview_metadata(market):
                 if logo_id:
                     raw_url = f"{base_logo_url}{logo_id}.svg"
                     folder_name = f"stocks_{market}" 
-                    # Burada SVG destekli upload fonksiyonu çalışacak
                     final_logo = upload_logo(raw_url, sembol, folder_name)
                 else:
                     final_logo = f"https://ui-avatars.com/api/?name={sembol}&background={bg_color}&color=fff&size=128&bold=true"
                 
                 if "," in isim: isim = isim.split(",")[0]
-                
                 data[sembol] = {"name": isim, "logo": final_logo}
-                
                 count += 1
-                if count % 100 == 0:
-                    print(f"      Processing... {count}/{len(items)}")
+                if count % 500 == 0: print(f"      Processing... {count}/{len(items)}")
 
-        print(f"      ✅ {market.upper()}: {len(data)} adet logo başarıyla işlendi.")
-    
+        print(f"      ✅ {market.upper()}: {len(data)} adet logo işlendi.")
     except Exception as e:
-        print(f"      ⛔ KRİTİK HATA (TradingView): {e}")
+        print(f"      ⛔ HATA (TradingView): {e}")
         
     return data
 
@@ -190,62 +176,43 @@ def get_tradingview_metadata(market):
 # 2. KRİPTO
 # ==============================================================================
 def get_crypto_metadata():
-    print("2. Kripto Logoları (CMC) çekiliyor ve yükleniyor...")
-    
+    print("2. Kripto Logoları (CMC) çekiliyor...")
     if not CMC_API_KEY:
-        print("   -> ⚠️ CMC Key Yok! Manuel liste.")
-        btc_url = upload_logo("https://s2.coinmarketcap.com/static/img/coins/64x64/1.png", "BTC-USD", "crypto")
-        eth_url = upload_logo("https://s2.coinmarketcap.com/static/img/coins/64x64/1027.png", "ETH-USD", "crypto")
-        return {
-            "BTC-USD": {"name": "Bitcoin", "logo": btc_url},
-            "ETH-USD": {"name": "Ethereum", "logo": eth_url}
-        }
+        print("   -> ⚠️ CMC Key Yok!")
+        return {}
 
     url = 'https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest'
     params = {'start': '1', 'limit': '300', 'convert': 'USD'}
     headers = {'Accepts': 'application/json', 'X-CMC_PRO_API_KEY': CMC_API_KEY}
     data = {}
-    
     try:
         r = requests.get(url, headers=headers, params=params, timeout=30)
         if r.status_code == 200:
             coins = r.json()['data']
-            print(f"      {len(coins)} Kripto para işleniyor...")
-            
             for coin in coins:
                 sym = coin['symbol']
                 name = coin['name']
                 coin_id = coin['id']
                 raw_logo = f"https://s2.coinmarketcap.com/static/img/coins/64x64/{coin_id}.png"
-                
                 key = f"{sym}-USD"
                 final_logo = upload_logo(raw_logo, key, "crypto")
-                
                 data[key] = {"name": name, "logo": final_logo}
-                
             print(f"   -> ✅ CMC: {len(data)} adet kripto yüklendi.")
     except Exception as e:
         print(f"   -> ⚠️ CMC Hatası: {e}")
-        
     return data
 
 # ==============================================================================
-# 3. FONLAR (TEFAS - YENİ MAVİ İKON & HATA DÜZELTMESİ)
+# 3. FONLAR (TEFAS FIX)
 # ==============================================================================
 def get_fon_metadata():
     print("3. Fon İsimleri (TEFAS) taranıyor...")
     data = {}
-    
-    # SENİN VERDİĞİN YENİ İKON (Varlık Logo)
     ICON_FUND = "https://firebasestorage.googleapis.com/v0/b/vario-264d9.firebasestorage.app/o/varl%C4%B1k_Logo%2Ffon.png?alt=media&token=00855c67-cda8-4dd6-a4e8-f8c3fb93ebae"
     
     url = "https://www.tefas.gov.tr/api/DB/BindComparisonFundReturns"
-    
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "X-Requested-With": "XMLHttpRequest",
-        "Referer": "https://www.tefas.gov.tr",
-        "Origin": "https://www.tefas.gov.tr",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
         "Content-Type": "application/json"
     }
     
@@ -255,37 +222,34 @@ def get_fon_metadata():
         payload = {"calismatipi": "2", "fontip": "YAT", "bastarih": tarih_str, "bittarih": tarih_str}
         
         r = requests.post(url, json=payload, headers=headers, timeout=30)
-        
         try:
             l = r.json().get('data', [])
-        except json.JSONDecodeError:
-            print("   ⚠️ TEFAS sunucusu yanıt vermedi, liste boş geçiliyor.")
+        except:
             l = []
 
-        if len(l) > 0:
+        if l:
             for f in l:
-                kod = f['FONKODU']
-                isim = f['FONADI']
-                # Tüm fonlara sabit mavi logoyu atıyoruz
-                data[kod] = {"name": isim, "logo": ICON_FUND}
+                # TEFAS HATASINI ENGELLEYEN KISIM:
+                try:
+                    kod = f.get('FONKODU')
+                    isim = f.get('FONADI')
+                    if kod and isim:
+                        data[kod] = {"name": isim, "logo": ICON_FUND}
+                except: continue
             print(f"   -> ✅ TEFAS: {len(data)} adet fon işlendi.")
             
     except Exception as e: 
         print(f"Hata (TEFAS): {e}")
-    
     return data
 
 # ==============================================================================
-# 4. DÖVİZ & ALTIN (GENİŞLETİLMİŞ 50+ ÜLKE LİSTESİ)
+# 4. DÖVİZ & ALTIN
 # ==============================================================================
 def get_doviz_altin_metadata(): 
     print("--- LOGO/METADATA HAZIRLANIYOR (Döviz & Altın) ---")
-    
-    # Senin verdiğin Firebase Linkleri
     ICON_GOLD = "https://firebasestorage.googleapis.com/v0/b/vario-264d9.firebasestorage.app/o/varl%C4%B1k_Logo%2Faltin.png?alt=media&token=59ceaffd-adca-48ba-9251-176f88e4b115"
     ICON_METAL = "https://firebasestorage.googleapis.com/v0/b/vario-264d9.firebasestorage.app/o/varl%C4%B1k_Logo%2Fgumus.png?alt=media&token=56f3452f-acca-4a92-8afb-870f361893cb"
 
-    # 1. DÖVİZ (Genişletilmiş Liste)
     doviz_config = {
         "USD": {"n": "ABD Doları", "c": "us"}, "EUR": {"n": "Euro", "c": "eu"},
         "GBP": {"n": "İngiliz Sterlini", "c": "gb"}, "CHF": {"n": "İsviçre Frangı", "c": "ch"},
@@ -313,29 +277,19 @@ def get_doviz_altin_metadata():
         "CLP": {"n": "Şili Pesosu", "c": "cl"}, "COP": {"n": "Kolombiya Pesosu", "c": "co"},
         "PEN": {"n": "Peru Solü", "c": "pe"}, "ZAR": {"n": "Güney Afrika Randı", "c": "za"}
     }
-
     data_doviz = {}
     for kod, info in doviz_config.items():
-        data_doviz[kod] = {
-            "name": info["n"], 
-            "logo": f"https://flagcdn.com/w320/{info['c']}.png"
-        }
+        data_doviz[kod] = {"name": info["n"], "logo": f"https://flagcdn.com/w320/{info['c']}.png"}
             
-    # 2. ALTIN
     altin_listesi = [
-        "14 Ayar Bilezik", "18 Ayar Bilezik", "22 Ayar Bilezik", "Ata Altın",
-        "Beşli Altın", "Cumhuriyet Altını", "Gram Altın", "Gram Gümüş",
-        "Gram Has Altın", "Gram Paladyum", "Gram Platin", "Gremse Altın",
-        "Hamit Altın", "Reşat Altın", "Tam Altın", "Yarım Altın",
-        "Çeyrek Altın", "İkibuçuk Altın"
+        "14 Ayar Bilezik", "18 Ayar Bilezik", "22 Ayar Bilezik", "Ata Altın", "Beşli Altın",
+        "Cumhuriyet Altını", "Gram Altın", "Gram Gümüş", "Gram Has Altın", "Gram Paladyum",
+        "Gram Platin", "Gremse Altın", "Hamit Altın", "Reşat Altın", "Tam Altın",
+        "Yarım Altın", "Çeyrek Altın", "İkibuçuk Altın"
     ]
-    
     data_altin = {}
     for isim in altin_listesi:
-        if any(x in isim for x in ["Gümüş", "Platin", "Paladyum"]):
-            ikon = ICON_METAL
-        else:
-            ikon = ICON_GOLD
+        ikon = ICON_METAL if any(x in isim for x in ["Gümüş", "Platin", "Paladyum"]) else ICON_GOLD
         data_altin[isim] = {"name": isim, "logo": ikon}
     
     return data_doviz, data_altin
@@ -345,31 +299,24 @@ def get_doviz_altin_metadata():
 # ==============================================================================
 if __name__ == "__main__":
     print("--- LOGO/METADATA MİGRASYON BAŞLIYOR (FIREBASE STORAGE) ---")
-    print("NOT: Bu işlem ilk seferde biraz uzun sürebilir (Resimler indiriliyor...)")
 
-    # 1. Verileri Çek ve Yükle
     meta_kripto = get_crypto_metadata()
     meta_bist = get_tradingview_metadata("turkey")
-    
-    # --- ABD HİSSELERİNİ AKTİF ETTİK ---
     meta_abd = get_tradingview_metadata("america") 
-    # -----------------------------------
-    
     meta_fon = get_fon_metadata()
     meta_doviz, meta_altin = get_doviz_altin_metadata()
 
-    # 2. Veritabanına Kaydet
+    # KAYIT İŞLEMLERİ (OTOMATİK PARÇALAMA DAHİL)
     coll_ref = db.collection(u'system_data')
 
     if meta_bist: 
         coll_ref.document(u'bist').set({u'data': meta_bist})
         print("✅ BIST veritabanı güncellendi.")
         
-    # --- ABD HİSSELERİNİ KAYDETMEYİ AKTİF ETTİK ---
+    # --- KRİTİK DEĞİŞİKLİK: ABD Hisseleri Parçalanıyor ---
     if meta_abd: 
-        coll_ref.document(u'abd').set({u'data': meta_abd})
-        print("✅ ABD Borsası veritabanı güncellendi.")
-    # ----------------------------------------------
+        save_data_in_chunks(u'system_data', u'abd', meta_abd, chunk_size=2000)
+    # ----------------------------------------------------
     
     if meta_kripto: 
         coll_ref.document(u'kripto').set({u'data': meta_kripto})
