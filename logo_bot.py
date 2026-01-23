@@ -202,7 +202,7 @@ def update_bist_smart():
         print(f"   💾 BIST verileri güncellendi.")
 
 # ==============================================================================
-# 3. KRİPTO PARALAR (Document: kripto) - Küçük harf
+# 3. KRİPTO PARALAR (Document: kripto) - EKRAN GÖRÜNTÜSÜNE GÖRE DÜZELTİLDİ
 # ==============================================================================
 def update_crypto_smart():
     print("\n🚀 3. Kripto Paralar Kontrol Ediliyor (Document: kripto)...")
@@ -212,19 +212,23 @@ def update_crypto_smart():
         return
 
     live_ref = db.collection(u'market_data').document(u'LIVE_PRICES')
-    # GÖRSELDEKİ İSİM: kripto (Küçük Harf)
     crypto_ref = db.collection(u'system_data').document(u'kripto')
     
     live_doc = live_ref.get()
-    target_symbols = list(live_doc.to_dict().get('kripto', {}).keys())
+    
+    # DÜZELTME 1: Senin market botun veriyi 'kripto_usd' olarak kaydediyor.
+    target_symbols_raw = list(live_doc.to_dict().get('kripto_usd', {}).keys())
+    
     existing_data = crypto_ref.get().to_dict() or {}
     
-    missing_symbols = [s for s in target_symbols if s not in existing_data]
-    if not missing_symbols:
+    # Eksikleri belirlerken anahtarın kendisine bakıyoruz (Örn: "BTC-USD" var mı?)
+    missing_keys = [s for s in target_symbols_raw if s not in existing_data]
+    
+    if not missing_keys:
         print("   ✅ Tüm Kripto logoları güncel.")
         return
 
-    print(f"   🔍 {len(missing_symbols)} eksik kripto aranıyor...")
+    print(f"   🔍 {len(missing_keys)} eksik kripto aranıyor...")
 
     url = "https://pro-api.coinmarketcap.com/v1/cryptocurrency/info"
     headers = { 'X-CMC_PRO_API_KEY': CMC_API_KEY, 'Accept': 'application/json' }
@@ -232,21 +236,38 @@ def update_crypto_smart():
     batch_size = 50
     updates = {}
     
-    for i in range(0, len(missing_symbols), batch_size):
-        batch = missing_symbols[i:i+batch_size]
-        params = {'symbol': ','.join(batch)}
+    # Batch işlemi
+    for i in range(0, len(missing_keys), batch_size):
+        batch_keys = missing_keys[i:i+batch_size]
+        
+        # DÜZELTME 2: CMC'ye sorarken "-USD" kısmını siliyoruz.
+        # "BTC-USD" -> "BTC" olarak sorulmalı.
+        clean_symbols_map = {k: k.replace("-USD", "") for k in batch_keys}
+        clean_symbols_list = list(clean_symbols_map.values())
+        
+        params = {'symbol': ','.join(clean_symbols_list)}
         
         try:
             r = requests.get(url, headers=headers, params=params)
             data = r.json().get('data', {})
             
-            for sym, details in data.items():
-                logo_raw = details.get('logo')
-                name = details.get('name')
-                if logo_raw:
-                    final_url = upload_logo(logo_raw, sym, "crypto")
-                    updates[sym] = {"name": name, "logo": final_url}
-                    print(f"      📥 {sym} yüklendi.")
+            # Gelen veriyi eşleştir
+            for clean_sym, details in data.items():
+                # Hangi orijinal anahtara (BTC-USD) denk geldiğini bulalım
+                original_key = next((k for k, v in clean_symbols_map.items() if v == clean_sym), None)
+                
+                if original_key and details.get('logo'):
+                    logo_raw = details.get('logo')
+                    name = details.get('name')
+                    
+                    # Storage'a "BTC-USD.png" değil "BTC.png" diye kaydetmek daha temizdir ama
+                    # veritabanı anahtarı "BTC-USD" olmalı ki fiyatla eşleşsin.
+                    final_url = upload_logo(logo_raw, clean_sym, "crypto")
+                    
+                    # Veritabanına orjinal anahtarla (Örn: 1INCH-USD) kaydediyoruz
+                    updates[original_key] = {"name": name, "logo": final_url}
+                    print(f"      📥 {original_key} yüklendi.")
+                    
         except Exception as e:
             print(f"   ⚠️ CMC API Hatası: {e}")
             
