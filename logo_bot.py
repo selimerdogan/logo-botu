@@ -202,7 +202,7 @@ def update_bist_smart():
         print(f"   💾 BIST verileri güncellendi.")
 
 # ==============================================================================
-# 3. KRİPTO PARALAR (Document: kripto) - EKRAN GÖRÜNTÜSÜNE GÖRE DÜZELTİLDİ
+# 3. KRİPTO PARALAR (MANUEL LİSTE + CANLI LİSTE)
 # ==============================================================================
 def update_crypto_smart():
     print("\n🚀 3. Kripto Paralar Kontrol Ediliyor (Document: kripto)...")
@@ -211,69 +211,42 @@ def update_crypto_smart():
         print("   ⚠️ CMC_API_KEY eksik! Kripto güncellenemiyor.")
         return
 
+    # --- ÖZEL EKLENECEK COIN LISTESI (MANUEL) ---
+    # Türkçe karakterler düzeltildi (ı -> I) ve büyük harfe çevrildi.
+    MANUAL_COINS = [
+        "ELG", "LSK", "SKR", "RESOLV", "UB", "TAIKO", "GWEI", "EUL", 
+        "KLK", "FB", "LISUSD", "ICNT", "GOHOME", "GOOGLON", "UCN", 
+        "BUSD", "VBUSD", "BLAST", "ORE", "HUMA", "SHX", "LBT", 
+        "SPELL", "USDON"
+    ]
+    # ---------------------------------------------
+
     live_ref = db.collection(u'market_data').document(u'LIVE_PRICES')
     crypto_ref = db.collection(u'system_data').document(u'kripto')
     
     live_doc = live_ref.get()
     
-    # DÜZELTME 1: Senin market botun veriyi 'kripto_usd' olarak kaydediyor.
-    target_symbols_raw = list(live_doc.to_dict().get('kripto_usd', {}).keys())
+    # 1. LIVE_PRICES'dan gelen mevcut liste (Örn: BTC-USD)
+    target_symbols_live = list(live_doc.to_dict().get('kripto_usd', {}).keys())
+    
+    # 2. Manuel Liste -> Veritabanı formatına çevir (Örn: ELG -> ELG-USD)
+    target_symbols_manual = [f"{s}-USD" for s in MANUAL_COINS]
+    
+    # İki listeyi birleştir (Tekrarları önle)
+    all_targets = list(set(target_symbols_live + target_symbols_manual))
     
     existing_data = crypto_ref.get().to_dict() or {}
     
-    # Eksikleri belirlerken anahtarın kendisine bakıyoruz (Örn: "BTC-USD" var mı?)
-    missing_keys = [s for s in target_symbols_raw if s not in existing_data]
+    # Veritabanında OLMAYANLARI bul (Hem canlıdan gelenler hem manuelden gelenler)
+    missing_keys = [s for s in all_targets if s not in existing_data]
     
     if not missing_keys:
-        print("   ✅ Tüm Kripto logoları güncel.")
+        print("   ✅ Tüm Kripto logoları (Manuel + Canlı) güncel.")
         return
 
-    print(f"   🔍 {len(missing_keys)} eksik kripto aranıyor...")
+    print(f"   🔍 {len(missing_keys)} eksik kripto aranıyor (Manuel liste dahil)...")
 
-    url = "https://pro-api.coinmarketcap.com/v1/cryptocurrency/info"
-    headers = { 'X-CMC_PRO_API_KEY': CMC_API_KEY, 'Accept': 'application/json' }
-    
-    batch_size = 50
-    updates = {}
-    
-    # Batch işlemi
-    for i in range(0, len(missing_keys), batch_size):
-        batch_keys = missing_keys[i:i+batch_size]
-        
-        # DÜZELTME 2: CMC'ye sorarken "-USD" kısmını siliyoruz.
-        # "BTC-USD" -> "BTC" olarak sorulmalı.
-        clean_symbols_map = {k: k.replace("-USD", "") for k in batch_keys}
-        clean_symbols_list = list(clean_symbols_map.values())
-        
-        params = {'symbol': ','.join(clean_symbols_list)}
-        
-        try:
-            r = requests.get(url, headers=headers, params=params)
-            data = r.json().get('data', {})
-            
-            # Gelen veriyi eşleştir
-            for clean_sym, details in data.items():
-                # Hangi orijinal anahtara (BTC-USD) denk geldiğini bulalım
-                original_key = next((k for k, v in clean_symbols_map.items() if v == clean_sym), None)
-                
-                if original_key and details.get('logo'):
-                    logo_raw = details.get('logo')
-                    name = details.get('name')
-                    
-                    # Storage'a "BTC-USD.png" değil "BTC.png" diye kaydetmek daha temizdir ama
-                    # veritabanı anahtarı "BTC-USD" olmalı ki fiyatla eşleşsin.
-                    final_url = upload_logo(logo_raw, clean_sym, "crypto")
-                    
-                    # Veritabanına orjinal anahtarla (Örn: 1INCH-USD) kaydediyoruz
-                    updates[original_key] = {"name": name, "logo": final_url}
-                    print(f"      📥 {original_key} yüklendi.")
-                    
-        except Exception as e:
-            print(f"   ⚠️ CMC API Hatası: {e}")
-            
-    if updates:
-        crypto_ref.set(updates, merge=True)
-        print(f"   💾 Kripto verileri güncellendi.")
+    url = "
 
 # ==============================================================================
 # 4. DÖVİZ (Document: doviz) - Küçük harf
