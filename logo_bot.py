@@ -87,20 +87,18 @@ def upload_logo(original_url, file_name, folder_name):
         return original_url 
 
 # ==============================================================================
-# 1. ABD HİSSELERİ (Document: ABD) - Büyük harf
+# 1. ABD HİSSELERİ (Document: ABD)
 # ==============================================================================
 def update_abd_smart():
     print("\n🇺🇸 1. ABD Hisseleri Kontrol Ediliyor (Document: ABD)...")
     
     live_ref = db.collection(u'market_data').document(u'LIVE_PRICES')
-    # GÖRSELDEKİ İSİM: ABD (Büyük Harf)
     abd_ref = db.collection(u'system_data').document(u'ABD') 
     
     live_doc = live_ref.get()
     if not live_doc.exists: return
     
     target_symbols = list(live_doc.to_dict().get('borsa_abd_usd', {}).keys())
-    # DÜZELTME: .get('data') kaldırıldı, direkt döküman okunuyor
     existing_data = abd_ref.get().to_dict() or {}
     
     missing_symbols = [s for s in target_symbols if s not in existing_data]
@@ -141,18 +139,16 @@ def update_abd_smart():
         time.sleep(0.1)
         
     if updates:
-        # DÜZELTME: Direkt merge=True ile 'data' wrapper olmadan basıyoruz
         abd_ref.set(updates, merge=True)
         print(f"   💾 ABD verileri güncellendi.")
 
 # ==============================================================================
-# 2. BIST HİSSELERİ (Document: bist) - Küçük harf
+# 2. BIST HİSSELERİ (Document: bist)
 # ==============================================================================
 def update_bist_smart():
     print("\n🇹🇷 2. BIST Hisseleri Kontrol Ediliyor (Document: bist)...")
     
     live_ref = db.collection(u'market_data').document(u'LIVE_PRICES')
-    # GÖRSELDEKİ İSİM: bist (Küçük Harf)
     bist_ref = db.collection(u'system_data').document(u'bist')
     
     live_doc = live_ref.get()
@@ -202,7 +198,7 @@ def update_bist_smart():
         print(f"   💾 BIST verileri güncellendi.")
 
 # ==============================================================================
-# 3. KRİPTO PARALAR (MANUEL LİSTE + CANLI LİSTE)
+# 3. KRİPTO PARALAR (Document: kripto) - MANUEL + OTOMATİK
 # ==============================================================================
 def update_crypto_smart():
     print("\n🚀 3. Kripto Paralar Kontrol Ediliyor (Document: kripto)...")
@@ -211,25 +207,24 @@ def update_crypto_smart():
         print("   ⚠️ CMC_API_KEY eksik! Kripto güncellenemiyor.")
         return
 
-    # --- ÖZEL EKLENECEK COIN LISTESI (MANUEL) ---
-    # Türkçe karakterler düzeltildi (ı -> I) ve büyük harfe çevrildi.
+    # --- MANUEL EKLENECEK COIN LİSTESİ (TÜRKÇE KARAKTER DÜZELTİLMİŞ) ---
     MANUAL_COINS = [
         "ELG", "LSK", "SKR", "RESOLV", "UB", "TAIKO", "GWEI", "EUL", 
         "KLK", "FB", "LISUSD", "ICNT", "GOHOME", "GOOGLON", "UCN", 
         "BUSD", "VBUSD", "BLAST", "ORE", "HUMA", "SHX", "LBT", 
         "SPELL", "USDON"
     ]
-    # ---------------------------------------------
+    # -------------------------------------------------------------------
 
     live_ref = db.collection(u'market_data').document(u'LIVE_PRICES')
     crypto_ref = db.collection(u'system_data').document(u'kripto')
     
     live_doc = live_ref.get()
     
-    # 1. LIVE_PRICES'dan gelen mevcut liste (Örn: BTC-USD)
+    # 1. LIVE_PRICES'dan gelen mevcut liste
     target_symbols_live = list(live_doc.to_dict().get('kripto_usd', {}).keys())
     
-    # 2. Manuel Liste -> Veritabanı formatına çevir (Örn: ELG -> ELG-USD)
+    # 2. Manuel Liste -> Veritabanı formatına çevir (Örn: TAIKO -> TAIKO-USD)
     target_symbols_manual = [f"{s}-USD" for s in MANUAL_COINS]
     
     # İki listeyi birleştir (Tekrarları önle)
@@ -237,31 +232,63 @@ def update_crypto_smart():
     
     existing_data = crypto_ref.get().to_dict() or {}
     
-    # Veritabanında OLMAYANLARI bul (Hem canlıdan gelenler hem manuelden gelenler)
+    # Veritabanında OLMAYANLARI bul
     missing_keys = [s for s in all_targets if s not in existing_data]
     
     if not missing_keys:
         print("   ✅ Tüm Kripto logoları (Manuel + Canlı) güncel.")
         return
 
-    print(f"   🔍 {len(missing_keys)} eksik kripto aranıyor (Manuel liste dahil)...")
+    print(f"   🔍 {len(missing_keys)} eksik kripto aranıyor...")
 
-    url = "
+    url = "https://pro-api.coinmarketcap.com/v1/cryptocurrency/info"
+    headers = { 'X-CMC_PRO_API_KEY': CMC_API_KEY, 'Accept': 'application/json' }
+    
+    batch_size = 50
+    updates = {}
+    
+    for i in range(0, len(missing_keys), batch_size):
+        batch_keys = missing_keys[i:i+batch_size]
+        
+        # CMC'ye sorarken "-USD" kısmını sil
+        clean_symbols_map = {k: k.replace("-USD", "") for k in batch_keys}
+        clean_symbols_list = list(clean_symbols_map.values())
+        
+        params = {'symbol': ','.join(clean_symbols_list)}
+        
+        try:
+            r = requests.get(url, headers=headers, params=params)
+            data = r.json().get('data', {})
+            
+            for clean_sym, details in data.items():
+                original_key = next((k for k, v in clean_symbols_map.items() if v == clean_sym), None)
+                
+                if original_key and details.get('logo'):
+                    logo_raw = details.get('logo')
+                    name = details.get('name')
+                    
+                    final_url = upload_logo(logo_raw, clean_sym, "crypto")
+                    updates[original_key] = {"name": name, "logo": final_url}
+                    print(f"      📥 {original_key} ({name}) yüklendi.")
+            
+        except Exception as e:
+            print(f"   ⚠️ CMC API Hatası: {e}")
+            
+    if updates:
+        crypto_ref.set(updates, merge=True)
+        print(f"   💾 {len(updates)} yeni kripto verisi kaydedildi.")
 
 # ==============================================================================
-# 4. DÖVİZ (Document: doviz) - Küçük harf
-# Not: 'altin' belgesi de var ama kod mantığında doviz içine atıyoruz.
-# Eğer altını ayırmak istersen aşağıyı bölebiliriz.
+# 4. DÖVİZ (Document: doviz)
 # ==============================================================================
 def update_doviz_smart():
     print("\n💵 4. Döviz Kontrol Ediliyor (Document: doviz)...")
     
     live_ref = db.collection(u'market_data').document(u'LIVE_PRICES')
-    # GÖRSELDEKİ İSİM: doviz (Küçük Harf)
     doviz_ref = db.collection(u'system_data').document(u'doviz')
     
     live_doc = live_ref.get()
-    target_symbols = list(live_doc.to_dict().get('doviz', {}).keys())
+    target_symbols = list(live_doc.to_dict().get('doviz_tl', {}).keys()) # doviz_tl olarak güncellendi
     existing_data = doviz_ref.get().to_dict() or {}
     
     missing_symbols = [s for s in target_symbols if s not in existing_data]
@@ -283,7 +310,6 @@ def update_doviz_smart():
             raw_url = f"https://flagcdn.com/w320/{country_code}.png"
             name = f"{sembol} / TRY"
         elif sembol in ["GA", "GRAMALTIN", "ALTIN", "ONS"]:
-            # Altınları da şimdilik doviz içine atıyoruz.
             raw_url = f"https://ui-avatars.com/api/?name=Au&background=FFD700&color=fff&size=128"
             name = "Gram Altın"
         else:
@@ -302,7 +328,7 @@ def update_doviz_smart():
 # ANA ÇALIŞTIRMA BLOĞU
 # ==============================================================================
 if __name__ == "__main__":
-    print("--- VARIO LOGO SENKRONİZASYON BOTU (FIREBASE FIX) ---")
+    print("--- VARIO LOGO SENKRONİZASYON BOTU (V4 - MANUEL LİSTE EKLİ) ---")
     update_abd_smart()
     update_bist_smart()
     update_crypto_smart()
