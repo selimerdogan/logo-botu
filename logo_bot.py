@@ -87,53 +87,154 @@ def upload_logo(original_url, file_name, folder_name):
         return original_url 
 
 # ==============================================================================
-# SADECE ÖZEL LİSTE İÇİN LOGO GÜNCELLEME (system_data/kripto)
+# 1. ABD HİSSELERİ (Document: ABD)
 # ==============================================================================
-def sync_manual_crypto_logos():
-    print("\n🚀 Özel Liste Kripto Logoları Kontrol Ediliyor...")
+def update_abd_smart():
+    print("\n🇺🇸 1. ABD Hisseleri Kontrol Ediliyor (Document: ABD)...")
+    
+    live_ref = db.collection(u'market_data').document(u'LIVE_PRICES')
+    abd_ref = db.collection(u'system_data').document(u'ABD') 
+    
+    live_doc = live_ref.get()
+    if not live_doc.exists: return
+    
+    target_symbols = list(live_doc.to_dict().get('borsa_abd_usd', {}).keys())
+    existing_data = abd_ref.get().to_dict() or {}
+    
+    missing_symbols = [s for s in target_symbols if s not in existing_data]
+    if not missing_symbols:
+        print("   ✅ Tüm ABD logoları güncel.")
+        return
+
+    print(f"   🔍 {len(missing_symbols)} eksik ABD hissesi aranıyor...")
+    
+    url = "https://scanner.tradingview.com/america/scan"
+    payload = {
+        "filter": [{"left": "type", "operation": "in_range", "right": ["stock", "dr", "fund"]}],
+        "symbols": {"tickers": []},
+        "columns": ["name", "description", "logoid"], 
+        "range": [0, 6000]
+    }
+    
+    tv_data_map = {}
+    try:
+        r = requests.post(url, json=payload, headers={"User-Agent": headers_general["User-Agent"]}, timeout=30)
+        items = r.json().get('data', [])
+        base_logo = "https://s3-symbol-logo.tradingview.com/"
+        for h in items:
+            d = h.get('d', [])
+            sym = d[0]
+            if sym in missing_symbols:
+                logo_url = f"{base_logo}{d[2]}.svg" if d[2] else f"https://ui-avatars.com/api/?name={sym}&background=0D8ABC&color=fff"
+                tv_data_map[sym] = {"name": d[1], "logo": logo_url}
+    except Exception as e:
+        print(f"   ⚠️ TradingView Hatası: {e}")
+
+    updates = {}
+    for sembol in missing_symbols:
+        info = tv_data_map.get(sembol, {"name": sembol, "logo": f"https://ui-avatars.com/api/?name={sembol}&background=555&color=fff"})
+        final_url = upload_logo(info['logo'], sembol, "stocks_america")
+        updates[sembol] = {"name": info['name'], "logo": final_url}
+        print(f"      📥 {sembol} yüklendi.")
+        time.sleep(0.1)
+        
+    if updates:
+        abd_ref.set(updates, merge=True)
+        print(f"   💾 ABD verileri güncellendi.")
+
+# ==============================================================================
+# 2. BIST HİSSELERİ (Document: bist)
+# ==============================================================================
+def update_bist_smart():
+    print("\n🇹🇷 2. BIST Hisseleri Kontrol Ediliyor (Document: bist)...")
+    
+    live_ref = db.collection(u'market_data').document(u'LIVE_PRICES')
+    bist_ref = db.collection(u'system_data').document(u'bist')
+    
+    live_doc = live_ref.get()
+    if not live_doc.exists: return
+
+    target_symbols = list(live_doc.to_dict().get('borsa_tr', {}).keys())
+    existing_data = bist_ref.get().to_dict() or {}
+    
+    missing_symbols = [s for s in target_symbols if s not in existing_data]
+    if not missing_symbols:
+        print("   ✅ Tüm BIST logoları güncel.")
+        return
+
+    print(f"   🔍 {len(missing_symbols)} eksik BIST hissesi aranıyor...")
+
+    url = "https://scanner.tradingview.com/turkey/scan"
+    payload = {
+        "filter": [{"left": "type", "operation": "in_range", "right": ["stock", "fund"]}],
+        "columns": ["name", "description", "logoid"], 
+        "range": [0, 1000]
+    }
+
+    tv_data_map = {}
+    try:
+        r = requests.post(url, json=payload, headers={"User-Agent": headers_general["User-Agent"]}, timeout=30)
+        items = r.json().get('data', [])
+        base_logo = "https://s3-symbol-logo.tradingview.com/"
+        for h in items:
+            d = h.get('d', [])
+            sym = d[0]
+            if sym in missing_symbols:
+                logo_url = f"{base_logo}{d[2]}.svg" if d[2] else f"https://ui-avatars.com/api/?name={sym}&background=C8102E&color=fff"
+                tv_data_map[sym] = {"name": d[1], "logo": logo_url}
+    except Exception as e:
+        print(f"   ⚠️ TradingView BIST Hatası: {e}")
+
+    updates = {}
+    for sembol in missing_symbols:
+        info = tv_data_map.get(sembol, {"name": sembol, "logo": f"https://ui-avatars.com/api/?name={sembol}&background=C8102E&color=fff"})
+        final_url = upload_logo(info['logo'], sembol, "bist")
+        updates[sembol] = {"name": info['name'], "logo": final_url}
+        print(f"      📥 {sembol} yüklendi.")
+        time.sleep(0.1)
+
+    if updates:
+        bist_ref.set(updates, merge=True)
+        print(f"   💾 BIST verileri güncellendi.")
+
+# ==============================================================================
+# 3. KRİPTO PARALAR (Document: kripto) - OTOMATİK MOD (-USD Temizliği Dahil)
+# ==============================================================================
+def update_crypto_smart():
+    print("\n🚀 3. Kripto Paralar Kontrol Ediliyor (Document: kripto)...")
     
     if not CMC_API_KEY:
-        print("   ⚠️ CMC_API_KEY eksik! İşlem yapılamıyor.")
+        print("   ⚠️ CMC_API_KEY eksik! Kripto güncellenemiyor.")
         return
 
-    # --- SADECE BU COINLER İŞLENECEK (Temizlenmiş Liste) ---
-    MANUAL_COINS = [
-        "LisUSD", "SKR", "GOOGLon", 
-
-        "BUSD", "vBUSD", "USDon"
-    ]
-    # -------------------------------------------------------
-
-    # Hedef: system_data -> kripto
+    live_ref = db.collection(u'market_data').document(u'LIVE_PRICES')
     crypto_ref = db.collection(u'system_data').document(u'kripto')
     
-    # Mevcut veriyi çek (Silmemek için)
+    live_doc = live_ref.get()
+    
+    # Live Prices'dan gelen "BTC-USD" gibi anahtarları al
+    target_symbols_raw = list(live_doc.to_dict().get('kripto_usd', {}).keys())
     existing_data = crypto_ref.get().to_dict() or {}
     
-    # Hangi formatta kaydedeceğiz? -> "SYMBOL-USD"
-    target_keys = [f"{s.upper()}-USD" for s in MANUAL_COINS] # upper() ile büyük harf garantisi
+    # Eksikleri belirle
+    missing_keys = [s for s in target_symbols_raw if s not in existing_data]
     
-    # Sadece system_data'da EKSİK olanları tarayalım
-    missing_in_db = [k for k in target_keys if k not in existing_data]
-    
-    if not missing_in_db:
-        print("   ✅ Listedeki tüm coinlerin logoları zaten sistemde var.")
+    if not missing_keys:
+        print("   ✅ Tüm Kripto logoları güncel.")
         return
 
-    print(f"   🔍 {len(missing_in_db)} adet yeni coinin logosu aranıyor...")
+    print(f"   🔍 {len(missing_keys)} eksik kripto aranıyor...")
 
-    # CoinMarketCap Metadata Endpoint
     url = "https://pro-api.coinmarketcap.com/v1/cryptocurrency/info"
     headers = { 'X-CMC_PRO_API_KEY': CMC_API_KEY, 'Accept': 'application/json' }
     
-    updates = {}
     batch_size = 50
+    updates = {}
     
-    # Eksik olanları işle
-    for i in range(0, len(missing_in_db), batch_size):
-        batch_keys = missing_in_db[i:i+batch_size]
+    for i in range(0, len(missing_keys), batch_size):
+        batch_keys = missing_keys[i:i+batch_size]
         
-        # CMC'ye sorarken "-USD" kısmını siliyoruz (TAIKO-USD -> TAIKO)
+        # CMC'ye sorarken "-USD" kısmını siliyoruz
         clean_symbols_map = {k: k.replace("-USD", "") for k in batch_keys}
         clean_symbols_list = list(clean_symbols_map.values())
         
@@ -144,39 +245,76 @@ def sync_manual_crypto_logos():
             data = r.json().get('data', {})
             
             for clean_sym, details in data.items():
-                # Orijinal anahtarı (TAIKO-USD) bul
-                # Not: clean_symbols_map'teki değerlerle CMC'den gelen clean_sym (örn: TAIKO) eşleşmeli
-                # CMC bazen büyük/küçük harf duyarlı olabilir, bu yüzden uppercase kontrolü ekledim.
-                original_key = next((k for k, v in clean_symbols_map.items() if v.upper() == clean_sym.upper()), None)
+                original_key = next((k for k, v in clean_symbols_map.items() if v == clean_sym), None)
                 
                 if original_key and details.get('logo'):
                     logo_raw = details.get('logo')
                     name = details.get('name')
                     
-                    # Logoyu indir ve Firebase Storage'a yükle
                     final_url = upload_logo(logo_raw, clean_sym, "crypto")
-                    
-                    # Güncelleme listesine ekle
                     updates[original_key] = {"name": name, "logo": final_url}
-                    print(f"      📥 {original_key} ({name}) logosu hazırlandı.")
-            
+                    print(f"      📥 {original_key} yüklendi.")
+                    
         except Exception as e:
             print(f"   ⚠️ CMC API Hatası: {e}")
             
-    # Sadece yeni bulunanları MEVCUT verinin üzerine ekle (Merge)
     if updates:
         crypto_ref.set(updates, merge=True)
-        print(f"   💾 {len(updates)} adet yeni logo system_data/kripto dosyasına eklendi.")
-    else:
-        print("   ℹ️ Eklenecek yeni logo bulunamadı.")
+        print(f"   💾 Kripto verileri güncellendi.")
+
+# ==============================================================================
+# 4. DÖVİZ (Document: doviz)
+# ==============================================================================
+def update_doviz_smart():
+    print("\n💵 4. Döviz Kontrol Ediliyor (Document: doviz)...")
+    
+    live_ref = db.collection(u'market_data').document(u'LIVE_PRICES')
+    doviz_ref = db.collection(u'system_data').document(u'doviz')
+    
+    live_doc = live_ref.get()
+    target_symbols = list(live_doc.to_dict().get('doviz_tl', {}).keys())
+    existing_data = doviz_ref.get().to_dict() or {}
+    
+    missing_symbols = [s for s in target_symbols if s not in existing_data]
+    if not missing_symbols:
+        print("   ✅ Tüm Döviz logoları güncel.")
+        return
+
+    currency_map = {
+        "USD": "us", "EUR": "eu", "GBP": "gb", "CHF": "ch", 
+        "CAD": "ca", "AUD": "au", "JPY": "jp", "CNY": "cn",
+        "RUB": "ru", "AZN": "az", "SAR": "sa"
+    }
+    
+    updates = {}
+    for sembol in missing_symbols:
+        country_code = currency_map.get(sembol)
+        
+        if country_code:
+            raw_url = f"https://flagcdn.com/w320/{country_code}.png"
+            name = f"{sembol} / TRY"
+        elif sembol in ["GA", "GRAMALTIN", "ALTIN", "ONS"]:
+            raw_url = f"https://ui-avatars.com/api/?name=Au&background=FFD700&color=fff&size=128"
+            name = "Gram Altın"
+        else:
+            raw_url = f"https://ui-avatars.com/api/?name={sembol[:2]}&background=222&color=fff"
+            name = sembol
+
+        final_url = upload_logo(raw_url, sembol, "currencies")
+        updates[sembol] = {"name": name, "logo": final_url}
+        print(f"      📥 {sembol} yüklendi.")
+        
+    if updates:
+        doviz_ref.set(updates, merge=True)
+        print(f"   💾 Döviz verileri güncellendi.")
 
 # ==============================================================================
 # ANA ÇALIŞTIRMA BLOĞU
 # ==============================================================================
 if __name__ == "__main__":
-    print("--- ÖZEL MANUEL LOGO YÜKLEYİCİ ---")
-    
-    # Sadece kripto fonksiyonunu çalıştırıyoruz.
-    sync_manual_crypto_logos()
-    
-    print("\n🎉 İŞLEM TAMAMLANDI!")
+    print("--- VARIO LOGO SENKRONİZASYON BOTU (FULL PAKET) ---")
+    update_abd_smart()
+    update_bist_smart()
+    update_crypto_smart()
+    update_doviz_smart()
+    print("\n🎉 TÜM İŞLEMLER TAMAMLANDI!")
