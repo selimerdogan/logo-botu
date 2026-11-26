@@ -223,10 +223,13 @@ def update_abd_smart():
     target_symbols = list(live_doc.to_dict().get('borsa_abd_usd', {}).keys())
     existing_data = abd_ref.get().to_dict() or {}
     
-    # Eksik olan veya ui-avatars olanları belirle
+    # Eksik olan, sahte ui-avatars veya eski stocks_america klasöründe kalanları tespit et
     missing_symbols = [
         s for s in target_symbols 
-        if s not in existing_data or not existing_data[s].get('logo') or "ui-avatars.com" in existing_data[s].get('logo', '')
+        if s not in existing_data 
+        or not existing_data[s].get('logo') 
+        or "ui-avatars.com" in existing_data[s].get('logo', '')
+        or "stocks_america" in existing_data[s].get('logo', '')
     ]
     
     if not missing_symbols:
@@ -297,9 +300,29 @@ def update_bist_smart():
     target_symbols = list(live_doc.to_dict().get('borsa_tr_tl', {}).keys())
     existing_data = bist_ref.get().to_dict() or {}
     
+    # BIST Özel Alan Adları (TradingView'de henüz SVG'si olmayan yeni/özel hisseler için)
+    BIST_DOMAINS = {
+        "KARCL": "kardemircelik.com.tr",
+        "ISVEA": "isvea.com.tr",
+        "KPEKS": "kapeks.com.tr",
+        "EBEBK": "ebebek.com",
+        "SURGY": "surtatil.com",
+        "MEKAG": "mekaglobal.com",
+        "TABGD": "tabgida.com.tr",
+        "VRGYO": "veragyo.com.tr",
+        "MHRGY": "mhrgyo.com.tr",
+        "BORLS": "borlease.com.tr",
+        "DOFRY": "dofer.com.tr",
+        "MARBL": "turaclar.com",
+        "GZNMI": "gezinomi.com"
+    }
+
     missing_symbols = [
         s for s in target_symbols 
-        if s not in existing_data or not existing_data[s].get('logo') or "ui-avatars.com" in existing_data[s].get('logo', '')
+        if s not in existing_data 
+        or not existing_data[s].get('logo') 
+        or "ui-avatars.com" in existing_data[s].get('logo', '')
+        or "stocks_turkey" in existing_data[s].get('logo', '')
     ]
     
     if not missing_symbols:
@@ -335,6 +358,8 @@ def update_bist_smart():
         if sembol in tv_data_map:
             logo_candidate = tv_data_map[sembol]["logo"]
             comp_name = tv_data_map[sembol]["name"]
+        elif sembol in BIST_DOMAINS:
+            logo_candidate = f"https://www.google.com/s2/favicons?domain={BIST_DOMAINS[sembol]}&sz=128"
         else:
             # Alternatif BIST logo CDN
             logo_candidate = f"https://fintables.com/logos/{sembol}.png"
@@ -402,6 +427,25 @@ def update_crypto_smart():
                         print(f"      📥 {original_key} yüklendi.")
         except Exception as e:
             print(f"   ⚠️ CMC API Hatası: {e}")
+
+        # CMC'de bulunamayanlar için CoinGecko yedek araması
+        for original_key, clean_sym in clean_symbols_map.items():
+            if original_key not in updates:
+                try:
+                    cg_r = requests.get(f"https://api.coingecko.com/api/v3/search?query={clean_sym}", headers=headers_general, timeout=8)
+                    if cg_r.status_code == 200:
+                        coins = cg_r.json().get('coins', [])
+                        for c in coins:
+                            if c.get('symbol', '').upper() == clean_sym.upper():
+                                cg_logo = c.get('large')
+                                if cg_logo:
+                                    final_url = upload_logo(cg_logo, clean_sym, "crypto")
+                                    if final_url:
+                                        updates[original_key] = {"name": c.get('name', clean_sym), "logo": final_url}
+                                        print(f"      📥 [CoinGecko] {original_key} yüklendi.")
+                                        break
+                except Exception:
+                    pass
             
     if updates:
         crypto_ref.set(updates, merge=True)
